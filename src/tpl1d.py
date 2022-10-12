@@ -15,20 +15,40 @@ def tpl1d(filename, out=None, show=False):
     hdr = hdu[0].header
 
     w, f = hdu['wave'].data.astype(float), hdu['spec'].data.astype(float)
-    ok = w != 1.
+    ok = w != 1.    
+    ok[w==0] = 0
 
     # parabolic window to downweight of edges to reduce egde effects
     nx = ok[0].size
     x = np.arange(nx)/nx - 0.5
     y = 1 - x**2/0.25
     ymap = ok * y
-    spl = cspline.ucbspl_fit(w[ok], f[ok], w=ymap[ok], K=int((w[ok].max()-w[ok].min())*3e5/0.2), lam=0.1)
+    K = int((w[ok].max()-w[ok].min())*3e5/0.2)
+    spl = cspline.ucbspl_fit(w[ok], f[ok], w=ymap[ok], K=K, lam=0.1)
 
     if show:
-        #gplot(w[ok], f[ok], 'w l, ', spl.osamp(1), 'w l')
-        gplot(np.exp(w[ok]), f[ok], 'w l t "2d", ', np.exp(spl.osamp(1)[0]), spl.osamp(1)[1], 'w l t "1d"')
+        gplot( spl.osamp(0.1), 'w l lc 2 t "tpl",',
+                                w[ok][::20], f[ok][::20], 'lc 1 pt 1 ps 0.3',)
+        #gplot(np.exp(w[ok]), f[ok], 'w l t "2d", ', np.exp(spl.osamp(1)[0]), spl.osamp(1)[1], 'w l t "1d"')
         from pause import pause; pause()
-    tpl = np.rec.array(spl.osamp(1), names='lnwave,flux')
+
+    # get gaps
+    w2 = w[~np.all(w==0,axis=1)]
+    gaps = np.array([w2[:-1,-1],w2[1:,0]]).T
+    gaps = gaps[gaps[:,1]-gaps[:,0]>0]
+    
+    tw,tf = spl.osamp(1)
+    # set tpl in gaps to nan
+    for g in gaps:
+        m = np.logical_and(tw>g[0],tw<g[1])
+        tf[m] = np.nan
+
+    tpl = np.rec.array((tw,tf), names='lnwave,flux')
+
+    if show:
+        gplot( spl.osamp(0.1), 'w l lc 2 t "tpl",',
+                                tw[::10], tf[::10], 'lc 1 pt 1 ps 0.3',)
+        from pause import pause; pause()
 
     if not out:
         out = filename.replace('.fits','') + '_1d.fits'

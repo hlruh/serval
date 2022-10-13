@@ -2072,6 +2072,7 @@ def serval():
          if wfix: sp.w = spt.w
          fmod = sp.w * np.nan
          bpmap = 1 * sp.bpmap
+         bpmap2 = 1 * sp.bpmap
          for o in orders:
             w2 = sp.w[o]
             x2 = np.arange(w2.size)
@@ -2311,6 +2312,9 @@ def serval():
                gplot+(x2,w2, ((b2&flag.sky)!=flag.sky)*40-5, 'us (column(i)):3 w filledcurve x2 fs transparent solid 0.5 noborder lc 6 axis x1y2 t "sky"')
                pause('large RV ' if abs(rvo/1000-targrv+tplrv)>rvwarn else 'look ', o, ' rv = %.3f +/- %.3f m/s   rchi = %.2f' %(rvo, e_rv[n,o], rchi[n,o]))
 
+            # save updated bpmap
+            bpmap2[o] = b2
+
          # end loop over orders
 
          ind, = where(np.isfinite(e_rv[n])) # do not use the failed and last order
@@ -2427,7 +2431,7 @@ def serval():
 
          if outfmt and not np.isnan(RV[n]):   # write residuals
             data = {'fmod': fmod, 'wave': sp.w, 'spec': sp.f,
-                    'err': sp.e, 'bpmap': bpmap, 'waverest': redshift(sp.w, vo=sp.berv, ve=RV[n]/1000.)}
+                    'err': sp.e, 'bpmap': bpmap2, 'waverest': redshift(sp.w, vo=sp.berv, ve=RV[n]/1000.)}
             outfile = os.path.basename(sp.filename)
             outfile = os.path.splitext(outfile)[0] + outsuf
             if 'res' in outfmt: data['res'] = sp.f - fmod
@@ -2631,7 +2635,7 @@ if __name__ == "__main__":
    argopt('-ofac', help='oversampling factor in coadding'+default, default=ofac, type=float)
    argopt('-ofacauto', help='automatic knot spacing with BIC.', action='store_true')
    argopt('-outchi', help='output of the chi2 map', nargs='?', const='_chi2map.fits')
-   argopt('-outfmt', help='output format of the fits file (default: None; const: fmod err res wave)', nargs='*', choices=['wave', 'waverest', 'err', 'fmod', 'res', 'spec', 'bpmap', 'ratio'], default=None)
+   argopt('-outfmt', help='output format of the fits file (default: None; const: fmod err res wave)', nargs='*', choices=['wave', 'waverest', 'err', 'fmod', 'res', 'spec', 'bpmap', 'mpmap', 'ratio'], default=None)
    argopt('-outsuf', help='output suffix', default='_mod.fits')
    argopt('-pmin', help='Minimum pixel'+default, default=pmin, type=int)
    argopt('-pmax', help='Maximum pixel'+default, default=pmax, type=int)

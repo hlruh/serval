@@ -45,50 +45,49 @@ def scan(self, s, orders=None, pfits=True, verb=True):
    """
    HIERARCH = 'HIERARCH '
    hdulist = self.hdulist = pyfits.open(s) # slow 30 ms
+   self.header = hdr = hdulist[0].header
+   self.instname = hdr['INSTRUME']
+   self.drsberv = hdr.get('BERV', np.nan)
+   self.drsbjd = hdr.get('BJD', np.nan) + 2400000
+   self.dateobs = hdr['DATE-OBS']
+   self.mjd = Time(self.dateobs, format='isot', scale='utc').mjd
+   self.sn55 = hdr.get('SNR', 50)
+   self.fileid = hdr.get('DATE-OBS', 0) #fileid[fileid.index('(')+1:fileid.index(')')]
+   self.timeid = self.fileid
+
+   self.calmode = "%s,%s,%s" % (hdr.get('SCI-OBJ', ''), hdr.get('CAL-OBJ', ''), hdr.get('SKY-OBJ', ''))
+
+   self.ra = hdr['RA']
+   self.de = hdr['DEC']
+   self.airmass = hdr.get('AIRMASS', np.nan)
+   self.exptime = hdr['ITIME']
+
+   # exclude files from files depending if the observation was charged
+   # this can be internally decided via snr
+   # a different flag might be useful
+   #self.charged = hdr['CHARGED']
+   #if not self.charged:
+   #    self.flag |= sflag.user
+   
    if 'Goldilocks' in self.filename:
-      self.header = hdr = hdulist[0].header
-      self.instname = hdr['INSTRUME']
-      self.drsberv = hdr.get('BERV', np.nan)
-      self.drsbjd = hdr.get('BJD', np.nan) + 2400000
-      self.dateobs = hdr['DATE-OBS']
-      self.mjd = Time(self.dateobs, format='isot', scale='utc').mjd
       self.drift = hdr.get(HIERARCH+'LRVCORR', np.nan)
       # no error given (https://github.com/grzeimann/Goldilocks_Documentation)
       self.e_drift = 0
-      self.sn55 = hdr.get('SNR 36', 50)
-      self.fileid = hdr.get('DATE-OBS', 0) #fileid[fileid.index('(')+1:fileid.index(')')]
-      self.timeid = self.fileid
-      self.calmode = "%s,%s,%s" % (hdr.get('SCI-OBJ', ''), hdr.get('CAL-OBJ', ''), hdr.get('SKY-OBJ', ''))
-
-      self.ra = hdr['RA']
-      self.de = hdr['DEC']
-      self.airmass = hdr.get('AIRMASS', np.nan)
-      self.exptime = hdr['ITIME']
+      
       self.tmmean = 0.5
    
    elif 1:
-      self.header = hdr = hdulist[0].header
-      self.instname = hdr['INSTRUME']
-      self.drsberv = hdr.get('BERV', np.nan)
-      self.drsbjd = hdr.get('BJD', np.nan) + 2400000
-      self.dateobs = hdr['DATE-OBS']
-      # self.mjd = hdr.get('JD_FW18') - 2400000.5   # PSU keyword
-      self.mjd = Time(self.dateobs, format='isot', scale='utc').mjd
       # for HPF spectra the drift is already included in the wavelength solution
       self.drift = hdr.get(HIERARCH+'CARACAL DRIFT FP RV', hdr.get(HIERARCH+'CARACAL DRIFT RV', np.nan))
       self.e_drift = hdr.get(HIERARCH+'CARACAL DRIFT FP E_RV', hdr.get(HIERARCH+'CARACAL DRIFT RVERR', np.nan))
-      self.sn55 = hdr.get('SNR 36', 50)
-      self.fileid = hdr.get('DATE-OBS', 0) #fileid[fileid.index('(')+1:fileid.index(')')]
-      self.timeid = self.fileid
-      self.calmode = "%s,%s,%s" % (hdr.get('SCI-OBJ', ''), hdr.get('CAL-OBJ', ''), hdr.get('SKY-OBJ', ''))
 
-      self.ra = hdr['RA']
-      self.de = hdr['DEC']
-      self.airmass = hdr.get('AIRMASS', np.nan)
-      self.exptime = hdr['ITIME']
       self.tmmean = hdr.get(HIERARCH+'CARACAL TMEAN', 0.0)
       if self.exptime: self.tmmean /= self.exptime   # normalise
       if self.tmmean == 0: self.tmmean = 0.5
+
+   if self.mjd > 59731:
+       # add drift offset post downtime (estimate based on sample)
+      self.drift = self.drift - 60
 
 def data(self, orders, pfits=True):
    if 'Goldilocks' in self.filename:

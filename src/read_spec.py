@@ -77,7 +77,7 @@ sflag = nameddict(
    lowSN=   32, # too low S/N
    hiSN=    64, # too high S/N
    daytime=128, # not within nautical twilight
-   moon=   256, # not within nautical twilight
+   moon=   256, # too close to the moon
    led=   2**9, # LED on during observation (CARM_VIS)
    rvnan=2**10,
    user= 2**11  # via command line option -n_excl
@@ -235,7 +235,7 @@ class Spectrum:
          w, f, e, b = self.w[o], self.f[o], self.e[o], self.bpmap[o]
       else:
          w, f, e, b = self.data(self, orders=orders, **kwargs)
-         w = np.log(w) if wlog else w.astype(np.float)
+         w = np.log(w) if wlog else w.astype(float)
          f = f.astype(float)
          e = e.astype(float)
          self.bflag |= np.bitwise_or.reduce(b.ravel())
@@ -601,7 +601,7 @@ tarmode = 5
 # 5  - use tar.extractfile, works with pyfits, doesn't work with myfits (np.fromfile accepts only real files and files object, not tar)
 # 6  - open as normal file, does not work
 
-def file_from_tar(s, inst='HARPS', fib=None, **kwargs):
+def file_from_tar(s, inst='HARPS', fib=None, pat=None, **kwargs):
    """
    Returns a file-like object.
    Reading header and data should use the same fits reader
@@ -611,8 +611,9 @@ def file_from_tar(s, inst='HARPS', fib=None, **kwargs):
    >>> extr = tar.getmember('data/reduced/2014-12-06/HARPS.2014-12-07T00:35:29.894_e2ds_A.fits')
 
    """
-   pat = {'HARPS': {'A': '_e2ds_A.fits', 'B': '_e2ds_B.fits'}[fib],
-          'FEROS': {'A': '.1061.fits', 'B': '.1062.fits'}[fib]} [inst]
+   if not pat:
+       pat = {'HARPS': {'A': '_e2ds_A.fits', 'B': '_e2ds_B.fits'}[fib],
+              'FEROS': {'A': '.1061.fits', 'B': '.1062.fits'}[fib]} [inst]
    tar = tarfile.open(s)
    for member in tar.getmembers():
        if pat in member.name: extr = member
@@ -694,8 +695,7 @@ class imhead(dict):
       #with open(s) as fi:
       if 1:
          fi.seek(extpos)
-         for card in iter(lambda:fi.read(80), ''):   # read in 80 byte blocks
-            card = card.decode()
+         for card in iter(lambda: fi.read(80).decode(), ''):   # read in 80 byte blocks
             NR += 1
             if card.startswith('END '): break
             if card.startswith(args):
@@ -758,7 +758,6 @@ class getext(dict):
       if hasattr(s, 'offset_data'):
          filepos = s.offset_data
          fileend = s.offset_data + s.size
-      #pause()
 
       while True:
          exthdr = imhead(self.fileobj, 'EXTNAME', extpos=filepos)

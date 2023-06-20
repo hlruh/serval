@@ -28,6 +28,7 @@ obj.rvo.dat    Radial velocity (orderwise, not drift corrected)
 obj.snr.dat    Signal-to-noise (orderwise)
 obj.srv.dat    Serval products time series compilation
 obj.targ.csv   Target properties from catalog request
+obj.tpl.fits   Template
 lastcmd.txt    Used SERVAL options
 log.obj        Plain text logfile of SERVAL stdout
 --------------------------------------------------------------------------------
@@ -68,6 +69,8 @@ Column Format Units     Label     Explanations
      6 A      ---       TIMEID    Identifier for file (time stamp)
      7 D      ---       TMMEAN    Flux weighted mean point
      8 D      s         EXPTIME   Exposure time
+     9 D      km/s      BERVSTART BERV at start of exposure
+    10 D      km/s      BERVEND   BERV at end of exposure
 --------------------------------------------------------------------------------
 
 
@@ -166,6 +169,20 @@ etc...
 --------------------------------------------------------------------------------
 
 
+Description of file: obj.fits
+----------------------------------------------------------------------------
+Extension Format Units     Label     Explanations
+----------------------------------------------------------------------------
+      [0] A       ---                Primary header (keywords for coadd method, used
+                                     spectra and RVs, template SNR for each order)
+      [1] D      ---       SPEC      Flux values of template at B-spline knots
+      [2] D      ---       SIG       Uncertainty estimate for knot flux values
+      [3] D      ln(A)     WAVE      Knot positions of uniform B-spline
+                                     (natural logarithm of vacuum wavelength)
+      [4] D      ---       QMAP      Quality map for knots (ratio of good pixels to all pixels)
+----------------------------------------------------------------------------
+
+
 Description of file: obj.halpha.dat
 --------------------------------------------------------------------------------
 Column Format Units     Label     Explanations
@@ -179,7 +196,7 @@ Column Format Units     Label     Explanations
      7 D      ---     E_HALEFT    HALEFT error
      8 D      ---       HARIGH    Halpha reference region (100,300) km/s
      9 D      ---     E_HARIGH    HARIGH error
-    10 D      ---       CAI       Calcium I index
+    10 D      ---       CAI       Calcium I index (6572.795) (-15.5, 15.5) km/s
     11 D      ---     E_CAI       CAI error
 --------------------------------------------------------------------------------
 
@@ -190,17 +207,18 @@ Column Format Units     Label     Explanations
 --------------------------------------------------------------------------------
      1 A      ---       TIMEID    Identifier for file (time stamp)
      2 D      ---       BJD       Barycentric Julian date [1]
-     3 D      ---       SNREF     Signal-to-ratio in reference order (CARM_VIS: 36, CARM_NIR: 16, HARPS: 55)
-     4 A      ---       OBJ       Fits keyword OBJECT
-     5 D      s         EXPTIME   Exposure time
-     6 A      ---       SPT       Spectral type SpT ccf.mask
-     7 I256   ---       FLAG      Flag bad spectra/instrument mode (0: ok)
-     8 D      ---       AIRMASS   Air mass from fits header
-     9 D      deg       RA        Telescope Ascension (degrees)
-    10 D      deg       DE        Telescope declination (degrees)
-    11 D      deg       SUNALT    Sun altitude (degrees)
-    12 D      deg       MOONSEP   Moon separation (degrees)
-    13 D      deg       MOONPHASE Moon phase (degrees)
+     3 D      km/s      BERV      Barycentric earth radial velocity [1]
+     4 D      ---       SNREF     Signal-to-ratio in reference order (CARM_VIS: 36, CARM_NIR: 16, HARPS: 55)
+     5 A      ---       OBJ       Fits keyword OBJECT
+     6 D      s         EXPTIME   Exposure time
+     7 A      ---       SPT       Spectral type SpT ccf.mask
+     8 I256   ---       FLAG      Flag bad spectra/instrument mode (0: ok)
+     9 D      ---       AIRMASS   Air mass from fits header
+    10 D      deg       RA        Telescope Ascension (degrees)
+    11 D      deg       DE        Telescope declination (degrees)
+    12 D      deg       SUNALT    Sun altitude (degrees)
+    13 D      deg       MOONSEP   Moon separation (degrees)
+    14 D      deg       MOONPHASE Moon phase (degrees)
 --------------------------------------------------------------------------------
 
 
@@ -327,15 +345,15 @@ Column Format Units     Label     Explanations
 --------------------------------------------------------------------------------
 
 
-Description of file: obj.fits
+Description of file: obj.tpl.fits
 --------------------------------------------------------------------------------
 Extension Format Units     Label     Explanations
 --------------------------------------------------------------------------------
-      [0] A       ---                primary header (keywords for coadd method, used
+      [0] A       ---                Primary header (keywords for coadd method, used
                                      spectra and RVs, template SNR for each order)
-      [1] D       ---      SPEC      flux
-      [2] D       A        WAVE      wavelength
+      [1] D       ---      SPEC      Oversampled (~4x) template flux
+      [2] D       ln(A)    WAVE      Natural logarithm of vacuum wavelengths
 
 
-template_post3.fits	template from coadd method post3	same as for template.fits
+template.fits is the same as obj.tpl.fits (soft link).
 

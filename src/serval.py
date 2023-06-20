@@ -65,22 +65,22 @@ ptr = np.ctypeslib.ndpointer
 _pKolynomial = np.ctypeslib.load_library('polyregression.so', servalsrc)
 _pKolynomial.polyfit.restype = c_double
 _pKolynomial.polyfit.argtypes = [
-   ptr(dtype=np.float),  # x2
-   ptr(dtype=np.float),  # y2
-   ptr(dtype=np.float),  # e_y2
-   ptr(dtype=np.float),  # fmod
+   ptr(dtype=float),   # x2
+   ptr(dtype=float),   # y2
+   ptr(dtype=float),   # e_y2
+   ptr(dtype=float),   # fmod
    #ptr(dtype=np.bool),  # ind
    c_double,             # ind
    c_int, c_double, c_int,  # n, wcen, deg
-   ptr(dtype=np.float),  # p
-   ptr(dtype=np.float),  # lhs
-   ptr(dtype=np.float)   # pstat
+   ptr(dtype=float),   # p
+   ptr(dtype=float),   # lhs
+   ptr(dtype=float)    # pstat
 ]
 _pKolynomial.interpol1D.argtypes = [
-   ptr(dtype=np.float),  # xn
-   ptr(dtype=np.float),  # yn
-   ptr(dtype=np.float),  # x
-   ptr(dtype=np.float),  # y
+   ptr(dtype=float),   # xn
+   ptr(dtype=float),   # yn
+   ptr(dtype=float),   # x
+   ptr(dtype=float),   # y
    c_int, c_int          # nn, n
 ]
 
@@ -585,7 +585,7 @@ def CCF(wt, ft, x2, y2, va, vb, e_y2=None, keep=None, plot=False, ccfmode='trape
    vgrid = np.arange(va, vb, v_step)
 
    # CCF is a data compression/smoothing/binning
-   SSR = np.arange(vgrid.size, dtype=np.float64)
+   SSR = np.arange(vgrid.size, dtype=float)
 
    def model_box(x, v):
        idx = np.searchsorted(wt+v/c, x)
@@ -954,10 +954,6 @@ def serval():
       pomax = ptomax - 300
       pmin = pomin.min()
       pmax = pomin.max()
-   elif inst.name == 'FTS':
-      iomax = 70
-      pmin = 300
-      pmax = 50000/5 - 500
 
    pat = pat % {'fib': fib}
 
@@ -1054,9 +1050,6 @@ def serval():
       files = sorted(glob.glob(dir_or_inputlist+'/*pho*_'+fib+'.fits'))
    if 'FEROS' in inst.name:
       files += sorted(glob.glob(dir_or_inputlist+'/f*'+('1' if fib=='A' else '2')+'0001.mt'))
-   if 'FTS' in inst.name:
-      files = sorted(glob.glob(dir_or_inputlist+'/*ap08.*_ScSm.txt'))
-      files = [s for s in files if '20_ap08.1_ScSm.txt' not in s and '20_ap08.2_ScSm.txt' not in s and '001_08_ap08.193_ScSm.txt' not in s ]
 
    files = np.array(files)[nset]
    nspec = len(files)
@@ -1114,7 +1107,7 @@ def serval():
       import astropy.io.fits as pyfits
       #hdu = pyfits.open('/home/astro115/carmenes/tellurics/stdatmos_vis/stdatmos_vis30a090rh0780p000t.fits')
       hdu = pyfits.open(atmspec)
-      wt, ft = lam2wave(hdu[1].data.field(0).astype(np.float64)), hdu[1].data.field(1).astype(np.float64)
+      wt, ft = lam2wave(hdu[1].data.field(0).astype(float)), hdu[1].data.field(1).astype(float)
       atmmod = spl.ucbspl_fit(wt, ft, K=int(ft.size/2))
       tidx = slice(None, -5)
 
@@ -2583,17 +2576,17 @@ if __name__ == "__main__":
    argopt = parser.add_argument   # function short cut
    argopt('obj', help='Tag, output directory and file prefix (e.g. Object name).')
    argopt('dir_or_inputlist', help='Directory name with reduced data fits/tar or a file listing the spectra (only suffixes .txt or .lis accepted).', nargs='?')
-   argopt('-targ', help='Target name requested in simbad for coordinates, proper motion, parallax and absolute RV.')
-   argopt('-targrade', help='Target coordinates: [ra|hh:mm:ss.sss de|de:mm:ss.sss].', nargs=2, default=[None,None])
-   argopt('-targpm', help='Target proper motion: pmra [mas/yr] pmde [mas/yr].', nargs=2, type=float, default=[0.0,0.0])
-   argopt('-targplx', help='Target parallax', type=float, default='nan')
-   argopt('-targrv', help='[km/s] Target RV guess (for index measures) [float, "drsspt", "drsmed", "targ", None, "auto"]. None => no measure; targ => from simbad, hdr; auto => first from headers, second from simbad))', default={'CARM_NIR':None, 'else':'auto'})
+   argopt('-targ', help='Target name requested in simbad for coordinates, proper motion, parallax and absolute RV.', metavar='Simbad_name')
+   argopt('-targrade', help='[hh:mm:ss.sss de:mm:ss.sss] Target coordinates.', nargs=2, default=[None, None], metavar=('RA', 'DE'))
+   argopt('-targpm', help='[mas/yr mas/yr] Target proper motion.', nargs=2, type=float, default=[0.0, 0.0], metavar=('PMRA', 'PMDE'))
+   argopt('-targplx', help='[mas] Target parallax.', type=float, default='nan', metavar='PLX')
+   argopt('-targrv', help='[km/s] Target RV guess (for index measures) [float, "drsspt", "drsmed", "targ", None, "auto"]. None => no measure; targ => from simbad, hdr; auto => first from headers, second from simbad)).', default={'CARM_NIR': None, 'else': 'auto'}, metavar='RV')
    argopt('-atmmask', help='Telluric line mask ('' for no masking)'+default, default='auto', dest='atmfile')
    argopt('-atmwgt', help='Downweighting factor for coadding in telluric regions'+default, type=float, default=None)
-   argopt('-atmspec', help='Telluric spectrum  (in fits format, e.g. lib/stdatmos_vis30a090rh0780p000t.fits) to correct spectra by simple division.'+default, type=str, default=None)
-   argopt('-brvref', help='Barycentric RV code reference', choices=brvrefs, type=str, default='WE')
+   argopt('-atmspec', help='Telluric spectrum  (in fits format, e.g. lib/stdatmos_vis30a090rh0780p000t.fits) to correct spectra by simple division'+default, type=str, default=None)
+   argopt('-brvref', help='Barycentric RV code reference'+default, choices=brvrefs, type=str, default='WE')
    argopt('-msklist', help='Ascii table with vacuum wavelengths to mask.', default='') # [flux and width]
-   argopt('-mskwd', help='[km/s] Broadening width for msklist.', type=float, default=4.)
+   argopt('-mskwd', help='[km/s] Broadening width for msklist'+default, type=float, default=4.)
    argopt('-mskspec', help='Ascii 0-1 spectrum.'+default, default='')
    argopt('-cache',  help='store the spectra in memory instead rereading (intended for few spectra in ascii format)', action='store_true')
    argopt('-ccf',  help='mode ccf [with files]', nargs='?', const='th_mask_1kms.dat', type=str)
@@ -2602,7 +2595,7 @@ if __name__ == "__main__":
    argopt('-coset', help='index for order in coadding (default: oset)'+default, default=coset, type=arg2slice)
    argopt('-co_excl', help='orders to exclude in coadding (default: o_excl)', type=arg2slice)
    argopt('-ckappa', help='kappa sigma (or lower and upper) clip value in coadding. Zero values for no clipping'+default, nargs='+', type=float, default=(4.,4.))
-   argopt('-deg',  help='degree for background polynomial', type=int, default=3)
+   argopt('-deg',  help='degree for background polynomial'+default, type=int, default=3)
    argopt('-distmax', help='[arcsec] Max distance telescope position from target coordinates.', nargs='?', type=float, const=30.)
    argopt('-driftref', help='reference file for drift mode', type=str)
    argopt('-fib',  help='fibre', choices=['', 'A', 'B', 'AB'], default='')
@@ -2624,7 +2617,6 @@ if __name__ == "__main__":
    argopt('-niter', help='number of RV iterations'+default, type=int, default=2)
    argopt('-oset', help='index for order subset (e.g. 1:10, ::5)'+default, default=oset, type=arg2slice)
    argopt('-o_excl', help='Orders to exclude (e.g. 1,10,3)'+default, default=[], type=arg2slice)
-   #argopt('-outmod', help='output the modelling results for each spectrum into a fits file',  choices=['ratio', 'HARPN', 'CARM_VIS', 'CARM_NIR', 'FEROS', 'FTS'])
    argopt('-ofac', help='oversampling factor in coadding'+default, default=ofac, type=float)
    argopt('-ofacauto', help='automatic knot spacing with BIC.', action='store_true')
    argopt('-outchi', help='output of the chi2 map', nargs='?', const='_chi2map.fits')
@@ -2700,7 +2692,7 @@ if __name__ == "__main__":
    elif len(vrange) == 3:
       v_lo, v_hi, v_step = vrange
    elif len(vrange) > 3:
-      pause('too many args for -vrange')
+      sys.exit('Error: Too many args for -vrange.')
 
    if tplR and len(tplR) > 2:
       sys.exit('Error: Too many args for -tplR.')

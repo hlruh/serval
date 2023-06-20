@@ -18,7 +18,10 @@ try:
 except:
     print('Cannot import astropy.io.fits')
 
-import chi2map
+try:
+    import chi2map
+except:
+    print('Cannot import chi2map')
 
 __author__ = 'Mathias Zechmeister'
 __version__ = '2021-03-31'
@@ -32,6 +35,7 @@ SERVAL - SpEctrum Radial Velocity AnaLyser (%s)
 # fix of keepdim capability of genfromtxt
 genfromtxt2d = lambda *x,**y: np.atleast_2d(np.genfromtxt(*x,**y))
 
+gplot.bar(0.5)
 
 class srv:
    '''
@@ -372,35 +376,31 @@ class srv:
       bjd, RVc, e_RVc, RVd, e_RVd, RV, e_RV, BRV, RVsa = self.trvc
       allrv = self.allrv
       bjd, RV, e_RV, rv, e_rv = allrv[:,0], allrv[:,1], allrv[:,2], allrv[:,5:], self.allerr[:,5:]
-      bjdmap = np.tile(bjd[:,np.newaxis], rv.shape[1])
-      omap = np.tile(np.arange(len(rv.T)), rv.shape[0]).T
+      omax = rv.shape[1]
+      bjdmap = np.tile(bjd, omax)
+      omap = np.tile(np.arange(omax), rv.shape[0])
 
       # Drift and sa yet no applied to rvo
-      # gplot(bjd, RV, e_RV, 'us 1:2:3 w e pt 7',)
-      # gplot(bjdmap.ravel(), rv.ravel(), e_rv.ravel(), omap.ravel(), 'us 1:2:4 w p pt 7 palette, "'+obj+'/'+obj+'.rvo.dat'+'" us 1:2:3 w e pt 7 lt 7')
       rvc = rv - (np.nan_to_num(RVd) + np.nan_to_num(RVsa))[:,np.newaxis]
       gplot.palette('define (0 "blue", 1 "green", 2 "red")').key('tit "%s"'% self.keytitle)
-      gplot.xlabel('"BJD - 2 450 000"').ylabel('"RV [m/s]')
-      # not drift corrected
-      #gplot(bjdmap.ravel(), rv.ravel(), e_rv.ravel(), omap.ravel(), 'us 1:2:4 w p pt 7 palette,', bjd, RV, e_RV, 'us 1:2:3 w e pt 7 lt 7')
-      # drift corrected
+      gplot.xlabel('"BJD - 2 450 000"').ylabel('"RV [m/s]"').cblabel("'order'")
       arg = ''
       hypertext = ''
       if not self.has_d.all():
-         arg += 'us 1:2:3 w e pt 6 lt 7 t "RV no drift"'
+         arg += 'us i:2:3 w e pt 6 lt 7 t "RV no drift"'
       if self.has_d.any():
          if arg: arg += ', "" '
-         arg += 'us 1:2:($3/$4) w e pt 7 lt 7 t "RVc"'
+         arg += 'us i:2:($3/$4) w e pt 7 lt 7 t "RVc"'
       if 1:
-         hypertext = ' "" us 1:2:(sprintf("o: %d\\nBJD: %f\\nRV: %f", $4, $1, $2)) w labels hypertext point pt 0 lt 1 t "",'
-         arg += ', "" us 1:2:(sprintf("No: %d\\nID: %s\\nBJD: %f\\nRV: %f+/-%f",$0+1, stringcolumn(5),$1, $2, $3)) w labels hypertext point pt 0  lt 1 t ""'
+         hypertext = ' "" us (i?$1:int($0/'+str(omax)+')):2:(sprintf("o: %d\\nBJD: %f\\nRV: %f", $4, $1, $2)) w labels hypertext point pt 0 lt 1 t "",'
+         arg += ', "" us (i?$1:int($0/'+str(omax)+')):2:(sprintf("No: %d\\nID: %s\\nBJD: %f\\nRV: %f+/-%f",$0+1, stringcolumn(5),$1, $2, $3)) w labels hypertext point pt 0  lt 1 t ""'
 
-      omax = rv.shape[1]
-      o = omap.ravel()[np.isfinite(rvc.ravel())].min()
+      o = omap[np.isfinite(rvc.ravel())].min()
+      gplot.bind('''"$" "i=!i; set xlabel i?'BJD - 2 450 000':'observation number'; repl"; i=1''')   # toggle observation BJD - number
       while 0 <= o < omax:
-         gplot-(bjdmap.ravel()-2450000, rvc.ravel(), e_rv.ravel(), omap.ravel(), 'us 1:2:4 w p pt 7 ps 0.5 palette t "RV_o",'+hypertext, bjd-2450000, RVc, e_RVc, self.has_d, self.info, arg) # 'us 1:2:3 w e pt 6 lt 7, ""  us 1:2:($3/$4) w e pt 7 lt 7')
-         gplot+(bjdmap[:,o]-2450000, rvc[:,o], e_rv[:,o], 'us 1:2:3 w e pt 12 lc 9 t "%s"'%o)
-         oo = pause('%i/%i'% (o, omax))
+         gplot-(bjdmap-2450000, rvc.ravel(), e_rv.ravel(), omap, 'us (i?$1:int($0/'+str(omax)+')):2:4 w p pt 7 ps 0.5 palette t "RV_o",'+hypertext, bjd-2450000, RVc, e_RVc, self.has_d, self.info, arg) # 'us 1:2:3 w e pt 6 lt 7, ""  us 1:2:($3/$4) w e pt 7 lt 7')
+         gplot+(bjd-2450000, rvc[:,o], e_rv[:,o], 'us i:2:3 w e pt 12 lc 9 t "o = %s"'%o)
+         oo = pause('o = %i/%i'% (o, omax))
          try:
             o += int(oo)
          except:
@@ -768,38 +768,34 @@ class srv:
 
       pause(obj)
 
-def compare(tag1, tag2, **kwargs):
-
-    obj1 = srv(tag1, **kwargs)
-    obj1.stat()
-    obj2 = srv(tag2, **kwargs)
-    obj2.stat()
+def compare(obj1, obj2, **kwargs):
 
     if 1:
         arg1 = ''
         arg2 = ''
         if not obj1.has_d.all():
-           arg1 += 'us 1:2:3 w e pt 6 lt 1 t "%s no drift (rms = %.3g m/s)" noenh' % (obj1.keytitle, obj1.mlrms[0])
+           arg1 += 'us 1:($2/($4==0)):3 w e pt 6 lc "#77FF0000" t "RVc no drift"'
         if obj1.has_d.any():
            if arg1: arg1 += ', "" '
-           arg1 += 'us 1:($2/$4):3 w e pt 7 lt 1 t "RVc"'
+           arg1 += 'us 1:($2/$4):3 w e pt 7 lc "#77FF0000" t "%s (rms = %.3g m/s)" noenh' % (obj1.keytitle, obj1.mlrms[0])
         if not obj2.has_d.all():
-           arg2 += 'us 1:2:3 w e pt 6 lt 3 t "%s no drift (rms = %.3g m/s)" noenh' % (obj2.keytitle, obj2.mlrms[0])
+           arg2 += 'us 1:($2/($4==0)):3 w e pt 6 lc "#770000FF" t "RVc no drift"'
         if obj2.has_d.any():
            if arg2: arg2 += ', "" '
-           arg2 += 'us 1:($2/$4):3 w e pt 7 lt 3 t "RVc"'
+           arg2 += 'us 1:($2/$4):3 w e pt 7 lc "#770000FF" t "%s (rms = %.3g m/s)" noenh' % (obj2.keytitle, obj2.mlrms[0])
 
         hypertext = ', "" us 1:2:(sprintf("No: %d\\nID: %s\\nBJD: %f\\nRV: %f +/- %f",$0+1, stringcolumn(5),$1, $2, $3)) w labels hypertext point pt 0'
         arg1 += hypertext + 'lc 1 t ""'
         arg2 += hypertext + 'lc 3 t ""'
-        gplot.key('tit "RVCs"')
         gplot.xlabel('"BJD - 2 450 000"').ylabel('"RV [m/s]"')
+        gplot.mxtics().mytics()
         gplot-(obj1.bjd-2450000, obj1.RVc, obj1.e_RVc, obj1.has_d, obj1.info, arg1)
         gplot+(obj2.bjd-2450000, obj2.RVc, obj2.e_RVc, obj2.has_d, obj2.info, arg2)
         i1 = np.in1d(obj1.bjd, obj2.bjd)
         i2 = np.in1d(obj2.bjd, obj1.bjd)
         if any(i1):
-            diff = obj2.RVc[i1] - obj1.RVc[i1]
+            diff = obj2.RVc[i2] - obj1.RVc[i1]
+            print("\nstd(diff) = %.4g m/s" % np.std(diff))
             gplot+(obj1.bjd[i1]-2450000, diff, "lc 9 ps 0.5 t 'RVc_{%s} - RVc_{%s}'"%(obj2.keytitle, obj1.keytitle))
     pause('cmp rv ', obj1.tag, 'vs.', obj2.tag)
 
@@ -819,7 +815,7 @@ if __name__ == "__main__":
    argopt('-brv', help='Compare BERVs with DRSBERVs', action='store_true')
    argopt('-cen', help='center RVs to zero median', action='store_true')
    argopt('-chi2map', help='plot the chi2map', action='store_true')
-   argopt('-cmp', help='compare two data set', action='store_true')
+   argopt('-cmp', help='Tag of comparison run.', type=str)
    argopt('-disp', help='plot order dispersion', action='store_true')
    argopt('-dlw', help='plot dLW', action='store_true')
    argopt('-dlwo', help='plot dLW_o colorcoded', action='store_true')
@@ -845,14 +841,17 @@ if __name__ == "__main__":
    args = parser.parse_args()
 
    if args.cmp:
-      compare(*args.tags, cen=args.cen)
-      exit()
+      objcmp = srv(args.cmp, cen=args.cen)
+      objcmp.stat()
+      print()
 
    for tag in args.tags:
       obj = srv(tag, cen=args.cen)
       obj.targ()
       obj.stat()
-      if not True in args.__dict__.values():
+      if args.cmp:
+          compare(objcmp, obj, cen=args.cen)
+      elif not True in args.__dict__.values():
          obj.plotrv()
       elif args.i:
          while True:

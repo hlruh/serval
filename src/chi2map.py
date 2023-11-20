@@ -84,6 +84,7 @@ class Chi2Map:
       chi2map = self.chi2map[orders]
 
       # Plot all maps normalised
+      gplot.PUT('set yrange [-0.1:1.1]')
       gplot.key('Left center rev top title "%s"' % keytitle)
       gplot.palette('defined (0 "blue", 1 "green", 2 "red")')
       gplot.xlabel('"v [km/s]"; set ylabel "chi^2 / max(chi^2)"; set cblabel "order"')
@@ -99,6 +100,7 @@ class Chi2Map:
 
       ogplot([RV]*2, [0,1], [e_RV]*2, 'us 1:2:3 w xerrorlines pt 2 lt 9 t "%.5g +/- %.5g m/s"'% (RV*1000, e_RV*1000), flush='')
       ogplot(rv, (chi2map /chi2map.max(axis=1)[:,np.newaxis]).min(axis=1), 'us 1:2 lt 7 pt 1 t "chi^2_{min}"')
+      
       #pause()
 
    def mlcrx(self, x, xc, ind):

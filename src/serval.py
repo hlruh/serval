@@ -2438,18 +2438,26 @@ def serval():
                gplot(chi2map.T /chi2map.max(axis=1), ' matrix us ($1*%s+%s):3:2 w l palette'%(v_step, v_lo))
             outfile = os.path.basename(sp.filename)
             outfile = os.path.splitext(outfile)[0] + '_chi2map.fits'
-            hdr = spt.header[0:10]
-            hdr.insert('COMMENT', ('CDELT1', v_step))
-            hdr['CTYPE1'] = 'linear'
-            hdr['CUNIT1'] = 'km/s'
-            hdr['CRVAL1'] = v_lo
-            hdr['CRPIX1'] = 1
-            hdr['CDELT1'] = v_step
-            hdr['CTYPE2'] = 'linear'
-            hdr['CRVAL2'] = 1
-            hdr['CRPIX2'] = 1
-            hdr['CDELT2'] = 1
-            write_fits(outdir+'res/'+outfile, chi2map, hdr+spt.header[10:])
+            
+            # -> changed compared to master branch: take the spectrum header with info on the spectrum
+            sph = Spectrum(sp.filename, inst=inst, pfits=True, drs=drs, fib=fib, targ=targ).header
+            sph.insert('COMMENT', ('CDELT1', v_step))
+            sph['CTYPE1'] = 'linear'
+            sph['CUNIT1'] = 'km/s'
+            sph['CRVAL1'] = v_lo
+            sph['CRPIX1'] = 1
+            sph['CDELT1'] = v_step
+            sph['CTYPE2'] = 'linear'
+            sph['CRVAL2'] = 1
+            sph['CRPIX2'] = 1
+            sph['CDELT2'] = 1 
+
+            sph['HIERARCH SERVAL RV'] = (RV[n], '[m/s] Radial velocity')
+            sph['HIERARCH SERVAL E_RV'] = (e_RV[n], '[m/s] RV error estimate')
+            sph['HIERARCH SERVAL RVC'] = (RVc[n], '[m/s] RV drift corrected')
+            sph['HIERARCH SERVAL E_RVC'] = (e_RVc[n], '[m/s] RVC error estimate')
+           
+            write_fits(outdir+'res/'+outfile, chi2map, sph)
 
          if n>0 and not safemode:
             # plot time series

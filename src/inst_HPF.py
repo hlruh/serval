@@ -61,6 +61,7 @@ def scan(self, s, orders=None, pfits=True, verb=True):
    self.de = hdr['DEC']
    self.airmass = hdr.get('AIRMASS', np.nan)
    self.exptime = hdr['ITIME']
+   self.tmmean = 0.5
 
    # exclude files from files depending if the observation was charged
    # this can be internally decided via snr
@@ -73,17 +74,11 @@ def scan(self, s, orders=None, pfits=True, verb=True):
       self.drift = hdr.get(HIERARCH+'LRVCORR', np.nan)
       # no error given (https://github.com/grzeimann/Goldilocks_Documentation)
       self.e_drift = 0
-      
-      self.tmmean = 0.5
    
    elif 1:
       # for HPF spectra the drift is already included in the wavelength solution
-      self.drift = hdr.get(HIERARCH+'CARACAL DRIFT FP RV', hdr.get(HIERARCH+'CARACAL DRIFT RV', np.nan))
-      self.e_drift = hdr.get(HIERARCH+'CARACAL DRIFT FP E_RV', hdr.get(HIERARCH+'CARACAL DRIFT RVERR', np.nan))
-
-      self.tmmean = hdr.get(HIERARCH+'CARACAL TMEAN', 0.0)
-      if self.exptime: self.tmmean /= self.exptime   # normalise
-      if self.tmmean == 0: self.tmmean = 0.5
+      self.drift = np.nan
+      self.e_drift = np.nan
 
    if self.mjd > 59731:
        # add drift offset post downtime (estimate based on sample)

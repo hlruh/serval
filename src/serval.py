@@ -27,6 +27,7 @@ import numpy as np
 from numpy import std,arange,zeros,where, polynomial,setdiff1d,polyfit,array, newaxis,average
 from scipy import interpolate, optimize
 from scipy.optimize import curve_fit
+from scipy.signal import convolve
 
 from gplot import *
 from pause import pause, stop
@@ -916,10 +917,9 @@ def fitspec(tpl, w, f, e_f=None, v=0, vfix=False, clip=None, nclip=1, keep=None,
 
 
 def serval():
-
    if not bp: sys.stdout = Logger()
 
-   global obj, targ, oset, coset, last, tpl, sp, fmod, reana, inst, fib, look, looki, lookt, lookp, lookssr, lookvsini, pmin, pmax, debug, pspllam, kapsig, nclip, atmfile, skyfile, atmwgt, omin, omax, ptmin, ptmax, driftref, deg, targrv, tplrv, tplvsini, tplR, R_inst
+   global obj, targ, oset, coset, last, tpl, sp, fmod, reana, inst, fib, look, looki, lookt, lookp, lookssr, lookvsini, pmin, pmax, debug, pspllam, kapsig, nclip, atmfile, skyfile, atmwgt, omin, omax, ptmin, ptmax, driftref, deg, targrv, tplrv, tplvsini, tplR, R_inst, knotoffset
 
    outdir = obj + '/'
    fibsuf = '_B' if inst=='FEROS' and fib=='B' else ''
@@ -1437,7 +1437,60 @@ def serval():
 
             # Smoothing with bspline
             # the number of knots is halved.
-            smod = spl.ucbspl_fit(barshift(spt.w[o,idx],spt.berv), spt.f[o,idx], K=int(idx.size*ofac/2), e_yk=True, lam=0.00001)
+            
+            ### TEST: knot offset ###
+            if 0:                
+                # before fitting spline vary the knot position and find the minimum
+                # optimize knot offset
+
+                v = barshift(spt.w[o,idx],spt.berv)
+                spc = spt.f[o,idx]
+
+                k = int(idx.size*ofac/2)
+
+                knot_spacing = (v.max()-v.min())/(k-1)
+                kk = np.linspace(0,knot_spacing,10)
+                
+                def func_spl_rv(knotoffset):
+                    #print(knotoffset)
+                    spl_t = spl.ucbspl_fit(v,spc,
+                                           xmin=v.min()+knotoffset,
+                                           xmax=v.max()+knotoffset,                                         
+                                           K=k, e_yk=True, lam=0.00001)
+                    # fit
+                    popt, pcov = curve_fit(lambda v,rv: spl_t(v+rv),v[100:-100],spc[100:-100],
+                                           p0=[-knot_spacing/2],bounds=(-knot_spacing,knot_spacing))
+                    
+                    return popt[0]
+                
+                knotoffset = optimize.differential_evolution(lambda x: func_spl_rv(x)**2, bounds=[(0, knot_spacing)]).x[0]
+                smod = spl.ucbspl_fit(v,spt.f[o,idx],
+                                       xmin=v.min()+knotoffset,
+                                       xmax=v.max()+knotoffset,                                         
+                                       K=k, e_yk=True, lam=0.00001)
+                print('knot_phase',knotoffset/knot_spacing)
+                
+            ### TEST: knot offset ###
+            if 0:
+                # use a fixed knot offset to see if something changes at all
+                
+                v = barshift(spt.w[o,idx],spt.berv)
+                k = int(idx.size*ofac/2)
+
+                knot_spacing = (np.nanmax(v)-np.nanmin(v))/(k-1)
+                
+                print('\n\n\nHERE spt\n\n\n')
+                print(v)
+                    
+                smod = spl.ucbspl_fit(barshift(spt.w[o,idx],spt.berv), spt.f[o,idx], 
+                                      xmin=np.nanmin(v)+knot_spacing*knotoffset,
+                                      xmax=np.nanmax(v)+knot_spacing*knotoffset,    
+                                      K=int(idx.size*ofac/2), e_yk=True, lam=0.00001)
+                     
+                
+            else:
+                smod = spl.ucbspl_fit(barshift(spt.w[o,idx],spt.berv), spt.f[o,idx], K=int(idx.size*ofac/2), e_yk=True, lam=0.00001)
+            
 
             # Conversion to cardinal spline and then to fast spline
             smod_spl = smod.to_spl()
@@ -1685,8 +1738,66 @@ def serval():
                   # deviation of mu should be as large or larger than mu
                   e_mu = pe_mu * mu  # 5 *mu
 
-               smod, ymod = spl.ucbspl_fit(wmod[ind], mod[ind], we[ind], K=nk, lam=pspllam, mu=mu, e_mu=e_mu, e_yk=True, retfit=True)
+               ### TEST: knot offset ###
 
+               if 0:                     
+                    # before fitting spline vary the knot position and find the minimum
+                    # optimize knot offset
+                
+                    v = wmod[ind]
+                    spc = mod[ind]
+                
+                    k = nk
+                
+                    knot_spacing = (v.max()-v.min())/(k-1)
+                    kk = np.linspace(0,knot_spacing,10)
+                    
+                    def func_spl_rv(knotoffset):
+                        #print(knotoffset)
+
+                        spl_t = spl.ucbspl_fit(wmod[ind], mod[ind], we[ind], 
+                                               xmin=v.min()+knotoffset,
+                                               xmax=v.max()+knotoffset,     
+                                               K=nk, lam=pspllam, 
+                                               mu=mu, e_mu=e_mu)
+                        # fit
+                        popt, pcov = curve_fit(lambda v,rv: spl_t(v+rv),v[100:-100],spc[100:-100],
+                                               p0=[-knot_spacing/2],bounds=(-knot_spacing,knot_spacing))
+                        
+                        return popt[0]
+                    
+                    knotoffset = optimize.differential_evolution(lambda x: func_spl_rv(x)**2, bounds=[(0, knot_spacing)]).x[0]
+                    smod, ymod = spl.ucbspl_fit(wmod[ind], mod[ind], we[ind], 
+                                           xmin=v.min()+knotoffset,
+                                           xmax=v.max()+knotoffset,     
+                                           K=nk, lam=pspllam, 
+                                           mu=mu, e_mu=e_mu, 
+                                           e_yk=True, retfit=True)
+                    print('knot_phase',knotoffset/knot_spacing)
+                    
+                    
+               ### TEST: knot offset ###
+               if 0:
+                   # use a fixed knot offset to see if something changes at all
+                   
+                    v = wmod[ind]
+                    spc = mod[ind]
+                
+                    k = nk
+                    print('\n\n\nHERE\n\n\n')
+                    print(v)
+                    knot_spacing = (np.nanmax(v)-np.nanmin(v))/(k-1)
+                    kk = np.linspace(0,knot_spacing,10)
+                    
+                    smod, ymod = spl.ucbspl_fit(wmod[ind], mod[ind], we[ind], 
+                                                xmin=np.nanmin(v)+knot_spacing*knotoffset,
+                                                xmax=np.nanmax(v)+knot_spacing*knotoffset,                                                          
+                                                K=nk, lam=pspllam, mu=mu, e_mu=e_mu, e_yk=True, retfit=True)
+                    
+               else:
+                    smod, ymod = spl.ucbspl_fit(wmod[ind], mod[ind], we[ind], K=nk, lam=pspllam, mu=mu, e_mu=e_mu, e_yk=True, retfit=True)
+                
+                    
                #yfit = ww[o]* 0 # np.nan
                #ind2 &= (ww[o]> smod.xmin) & (ww[o]< smod.xmax)
                #yfit[ind2] = smod(ww[o][ind2])
@@ -2188,6 +2299,78 @@ def serval():
 
                # pause()
                if o==41: pind=pind[:-9]   # @CARM_NIR?
+               
+               
+               ### TEST: tapering ###
+               if 0:
+                   # tapering
+                   from masktools import mask2taperingweights
+                   tapering_weights = mask2taperingweights(b2, taper_halfwidth=10, downweighting_factor=1e-2)
+                   e2 = e2.copy()/tapering_weights
+                   
+               ### TEST: Barycentric masking
+               if 0:
+                   
+                   def generate_barymask(logw,mask,rv_bary):
+                       # mask to binary mask
+                       bmask = mask==0
+                       #bmask = bmask*0 + 1
+                       #bmask[:700] = 0
+                       #bmask[-700:] = 0
+                       
+                       # convert to velocity
+                       v = (logw-np.nanmin(logw))*c # km/s
+                       
+                       # interpolate mask
+                       maskfunc = interpolate.interp1d(v, bmask, kind='nearest')
+                       
+                       # oversample
+                       sampling_v = 0.3 # km/s
+                       vv = np.arange(v.min(),v.max(),sampling_v)
+
+                       mask_over = maskfunc(vv).astype(int)
+                       
+                       # broaden the template
+                       width = 60 # km/s
+                       width_ = int(width/sampling_v)
+                       mask_over_conv = convolve(mask_over,np.ones(width_)/width_+1e-10,mode='same').astype(int)
+
+                       # interpolate new mask
+                       barymaskfunc = interpolate.interp1d(vv, mask_over_conv, kind='nearest', bounds_error=False,fill_value=0)
+
+                       # shift mask according to barycentric velocity
+                       barymask = barymaskfunc(v+rv_bary).astype(int)
+                       barymask[bmask==0] = 0
+
+                       '''#plot mask
+                       import matplotlib.pylab as plt
+                       plt.figure()
+                       plt.plot(v,bmask,'b')
+                       plt.plot(vv,mask_over,'r')
+                       plt.plot(vv,mask_over_conv,'g')
+                       plt.plot(v,barymask,'.-k')
+                       plt.show()'''
+                       
+                       #barymask = np.copy(bmask)
+
+                       
+                       return barymask
+                   
+                   b3 = generate_barymask(spt.w[o],b2,spt.berv)
+                   pind = x2[b3==1]
+                   
+               ### TEST: unweighted fit
+               if 0:
+                   
+                   '''
+                   import matplotlib.pylab as plt
+                   plt.figure()
+                   plt.plot(wmod,e2)
+                   plt.show()
+                   '''
+                   
+                   e2 = np.ones(len(e2))
+                   
                par, f2mod, keep, stat, chi2mapo = fitspec(TPL[o], wmod, f2, e2, v=targrv-tplrv, clip=kapsig, nclip=nclip, keep=pind, indmod=np.s_[pmin:pmax], plot=(o in lookssr)|(2*(not safemode)), deg=deg, chi2map=True)
 
                if diff_width:
@@ -2623,6 +2806,7 @@ if __name__ == "__main__":
    argopt('-moonsep', help='Flag threshold for min. moon separation'+default, type=float, default=7.)
    argopt('-nclip', help='max. number of clipping iterations'+default, type=int, default=2)
    argopt('-niter', help='number of RV iterations'+default, type=int, default=2)
+   argopt('-knotoffset', help='Offset in knot placements'+default, type=float, default=0)
    argopt('-oset', help='index for order subset (e.g. 1:10, ::5)'+default, default=oset, type=arg2slice)
    argopt('-o_excl', help='Orders to exclude (e.g. 1,10,3)'+default, default=[], type=arg2slice)
    argopt('-ofac', help='oversampling factor in coadding'+default, default=ofac, type=float)
@@ -2662,7 +2846,6 @@ if __name__ == "__main__":
    # use add_help=false and re-add with more arguments
    argopt('-?', '-h', '-help', '--help',  help='show this help message and exit', action='help')
    #parser.__dict__['_option_string_actions']['-h'].__dict__['option_strings'] += ['-?', '-help']
-
 
    for i, arg in enumerate(sys.argv):   # allow to parse negative floats
       if len(arg) and arg[0]=='-' and arg[1].isdigit(): sys.argv[i] = ' ' + arg

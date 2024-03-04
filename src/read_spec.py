@@ -208,6 +208,11 @@ class Spectrum:
       else:
          self.bjd, self.berv = self.drsbjd, self.drsberv
          self.brvref = self.drsname
+         
+      # TESTING
+      if 0:
+         self.bjd, self.berv = self.drsbjd, self.drsberv
+         self.brvref = self.drsname
 
       if self.fib == 'B':
          self.berv = np.nan

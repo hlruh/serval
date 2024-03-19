@@ -1,4 +1,4 @@
-#! /usr/bin/python
+#! /usr/bin/env python
 from __future__ import division, print_function
 
 import sys
@@ -377,7 +377,7 @@ class srv:
       allrv = self.allrv
       bjd, RV, e_RV, rv, e_rv = allrv[:,0], allrv[:,1], allrv[:,2], allrv[:,5:], self.allerr[:,5:]
       omax = rv.shape[1]
-      bjdmap = np.tile(bjd, omax)
+      bjdmap = np.tile(bjd[:,np.newaxis], omax).ravel()
       omap = np.tile(np.arange(omax), rv.shape[0])
 
       # Drift and sa yet no applied to rvo
@@ -571,9 +571,9 @@ class srv:
          pause('spaghetti %s' % self.keytitle)
 
    def plot_vsini(self):
-         gplot.ylabel('"rotation velocity vsini [km/s]"')
+         gplot.ylabel('"rotational velocity vsini [km/s]"')
          gplot.xlabel('"order index o"')
-         gplot('"%s" us (0.5):(med=$1):(e_vsini=$2) every :::0::0' % (self.pre+'.vsini.dat') )
+         gplot('"%s" us (0.5):(med=$1):(e_vsini=$2) every :::0::0' % (self.pre+'.vsini.dat'))   # only to read median from first block
          gplot('med+e_vsini w filledcurves y=med-e_vsini fc rgb "#e3f3ff" t "", med lc 3 t sprintf("median = %.2f +/- %.2f km/s", med, e_vsini)', ', "" us 1:2:3 every :::1::1  w e lc 1 pt 6 t "%s"' % self.tag)
          pause('vsini %s' % self.keytitle)
 
@@ -672,6 +672,11 @@ class srv:
                   n += 1
             n = np.clip(n, 0, self.N-1)
             o = np.clip(o, 0, resmap.shape[0] - 1)
+
+
+   def tpl(self):
+       import tpl_plot
+       tpl_plot.plot(self.tag)
 
 
    def xcorr(self, block=True):
@@ -834,6 +839,7 @@ if __name__ == "__main__":
    argopt('-rvnno', help='plot rv and the rvo for spectrum n in a lower panel with all rvo as background', action='store_true')
    argopt('-rvo', help='plot rvo colorcoded', action='store_true')
    argopt('-spaghetti', help='plot o-rvno colorcoded', action='store_true')
+   argopt('-tpl', help='plot the template in the browser', action='store_true')
    argopt('-vsini', help='plot measured vsini for each order (see serval option -vsiniauto)', action='store_true')
    argopt('-x', help='cross plot'+default, action='store_true')
    argopt('-?', '-h', '-help', '--help',  help='show this help message and exit', action='help')
@@ -904,4 +910,5 @@ if __name__ == "__main__":
             obj.postrv()
          if args.brv:
             obj.plot_brv()
-
+         if args.tpl:
+            obj.tpl()

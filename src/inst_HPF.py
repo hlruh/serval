@@ -24,6 +24,7 @@ maskfile = 'telluric_mask_carm_short.dat'
 skyfile = 'sky_mask_5_sigma.dat'
 blazefile = 'hpf_blaze_spectra.fits'  # https://github.com/grzeimann/Goldilocks_Documentation/blob/master/hpf_blaze_spectra.fits
 
+R = 53000.
 
 # Instrument read functions
 def scan(self, s, orders=None, pfits=True, verb=True):

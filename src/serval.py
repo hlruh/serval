@@ -24,7 +24,7 @@ import time
 import importlib
 
 import numpy as np
-from numpy import std,arange,zeros,where, polynomial,setdiff1d,polyfit,array, newaxis,average
+from numpy import std, arange, zeros, where, polynomial, array, newaxis
 from scipy import interpolate, optimize
 from scipy.optimize import curve_fit
 from scipy.signal import convolve
@@ -166,6 +166,10 @@ class Tpl:
       bk : bad pixel flag map
       vrange : velocity range to broaden the bpmap bk
       '''
+      self.berv = berv
+      self.initfunc = initfunc
+      self.evalfunc = evalfunc
+
       ii = slice(None)
       if mask:
           ii = np.isfinite(fk)
@@ -180,7 +184,10 @@ class Tpl:
       self.vsini = vsini
       self.R = R
 
-      if R and self.wk[1]-self.wk[0]:
+      if not self.wk[1]-self.wk[0]:
+          return
+
+      if R:
           # boadening with Gaussian kernel
           fwhm = 1/R   # [ln(A)]  1/R = dlam/lam = d(ln(lam)); v_fwhm = c/R
           sig = fwhm / (2*np.sqrt(2*np.log(2)))
@@ -189,50 +196,26 @@ class Tpl:
           self.wk0, self.fk0, self.bk0 = ipbroad(self.wk0, self.fk0, self.bk0, sig)
           self.wk, self.fk, self.bk = self.wk0, self.fk0, self.bk0
 
-      if vsini and self.wk[1]-self.wk[0]:
+      if vsini:
           # does not handle gaps! Only for serval templates. Phoenix is not log-uniform sampled.
-          self.wk, self.fk = rotbroad(self.wk0, self.fk0, vsini)
+          self.wk, self.fk, self.bk = rotbroad(self.wk0, self.fk0, vsini, b=self.bk0)
 
-      self.berv = berv
-      self.initfunc = initfunc
       self.funcarg = self.initfunc(self.wk, self.fk)
-      self.evalfunc = evalfunc
 
-      BK = 0 * self.bk   # broadened flag map
-      dvmin = np.diff(self.wk).min() * c
-      if (bk is not None) and (vrange is not None) and (dvmin > 0):
-          istart = int(np.floor(vrange[0] / dvmin))
-          istop = int(np.ceil(vrange[1] / dvmin))
-          for i in range(istart, istop):
-              if i == 0:
-                  BK |= self.bk
-                  continue
-              elif i > 0:
-                 ia = np.s_[:-i]
-                 ib = np.s_[i:]
-              elif i < 0:
-                 ia = np.s_[-i:]
-                 ib = np.s_[:i]
-              dwi = self.wk[ib] - self.wk[ia]
-              inside = dwi >= (vrange[0]/c)
-              inside &= dwi <= (vrange[1]/c)
-              BK[ib] |= self.bk[ia] * inside
+      BK = 1 * self.bk   # flag map for interpolation
+      if (bk is not None) and (vrange is not None):
+          # broaden flag map
+          BK = flagbroad(self.wk, self.bk, *vrange)
 
-          if 0:
-              gplot(np.exp(wk), bk, ',', np.exp(wk), BK)
-              pause()
-
-          self.msk = interp(wk, 1.*(BK>0))
-      else:
-          self.msk = interp(wk, 1.*(self.bk>0))
-
+      self.msk_fast = interp(self.wk, 1.*(BK>0))
+      self.msk = interpolate.interp1d(self.wk, 1.*(BK>0), fill_value=1., bounds_error=False)
 
    def __call__(self, w, der=0):
       return self.evalfunc(w, self.funcarg, der=der)
 
    def mskbad(self, w):
       # mask wavelengths in spectra where template is bad (atm, stellar)
-      return self.msk(w) > 0.01
+      return self.msk_fast(w) > 0.01
 
    def rotbroad(self, vsini=0):
       if vsini > 0:
@@ -243,7 +226,7 @@ class Tpl:
          self.funcarg = self.initfunc(self.wk, self.fk)
 
 
-def rotbroad(x, f, v):
+def rotbroad(x, f, v, b=None):
     '''
     Broaden a spectrum by rotation.
 
@@ -271,7 +254,7 @@ def rotbroad(x, f, v):
     A = np.sqrt(1 - (np.arange(-k,k+1.) / kmax)**2)
     A /= sum(A)    # normalise kernel to unity area
 
-    return x[k:-k], np.convolve(f, A, mode='valid')
+    return (x[k:-k], np.convolve(f, A, mode='valid')) + (() if b is None else (b[k:-k],))
 
     frot = 0
     for i in range(-k, k+1):
@@ -294,18 +277,42 @@ def ipbroad(x, f, b, s):
     f : Broadened spectrum.
 
     '''
-
-    dx = x[1] - x[0]   # [ln(A)] wavelength step
-    kw = 3   # kernel half-width in sigma
-    k = int(kw * s / dx)        # kernel sampling
-    # Gaussian broadening kernel
-    A = np.exp(-0.5*(np.arange(-k,k+1.)/k*kw)**2)
+    dx = (x[1] - x[0]) / s   # [sigma] kernel sampling step width
+    # Gaussian broadening kernel (up to 3 sigma)
+    A = np.exp(-0.5*np.arange(0, 3, dx)**2)
+    k = A.size - 1
+    A = np.r_[A[:0:-1], A]   # pad symmetric part
     A /= sum(A)    # normalise kernel to unity area
-    if 0:
-        print(len(x), dx, s, k)
-        gplot(A)
-        pause()
     return x[k:-k], np.convolve(f, A, mode='valid'), b[k:-k]
+
+def flagbroad(wk, bk, vmin, vmax):
+    '''
+    Broadens the flagmap. Corresponds to a convolution with a box and accumulation with logical_or instead of addition
+    '''
+    BK = 0 * bk
+    dvmin = np.diff(wk).min() * c
+    istart = int(np.floor(vmin / dvmin))
+    istop = int(np.ceil(vmax / dvmin))
+    for i in range(istart, istop):
+        if i == 0:
+            BK |= bk
+            continue
+        elif i > 0:
+           ia = np.s_[:-i]
+           ib = np.s_[i:]
+        elif i < 0:
+           ia = np.s_[-i:]
+           ib = np.s_[:i]
+        dwi = wk[ib] - wk[ia]
+        inside = dwi >= (vmin/c)
+        inside &= dwi <= (vmax/c)
+        BK[ib] |= bk[ia] * inside
+
+    if 0:
+        gplot(np.exp(wk), bk, ',', np.exp(wk), BK)
+        pause()
+
+    return BK
 
 def analyse_rv(obj, postiter=1, fibsuf='', oidx=None, safemode=False, pdf=False):
    """
@@ -337,7 +344,7 @@ def analyse_rv(obj, postiter=1, fibsuf='', oidx=None, safemode=False, pdf=False)
 
    # post RVs (re-weightening)
    ok = e_rv > 0
-   ordmean = average(rv*0, axis=0)
+   ordmean = np.average(rv*0, axis=0)
    gplot.key('tit "'+obj+'"')
    for i in range(1+postiter): # centering, first loop to init, other to clip
       RVp, e_RVp = nanwsem(rv-ordmean, e=e_rv*ok, axis=1)
@@ -1069,14 +1076,15 @@ def serval():
    if lookvsini: lookvsini = np.arange(iomax)[lookvsini]
 
    if outfmt or outchi: os.system('mkdir -p '+obj+'/res')
+   w_or_a = 'a' if append else 'w'
    with open(outdir+'lastcmd.txt', 'w') as f:
       print(' '.join(sys.argv), file=f)
    with open('cmdhistory.txt', 'a') as f:
       print(' '.join(sys.argv), file=f)
 
-   badfile = open(outdir + obj + '.flagdrs' + fibsuf + '.dat', 'w')
-   infofile = open(outdir + obj + '.info' + fibsuf + '.csv', 'w')
-   bervfile = open(outdir + obj + '.brv' + fibsuf + '.dat', 'w')
+   badfile = open(outdir + obj + '.flagdrs' + fibsuf + '.dat', w_or_a)
+   infofile = open(outdir + obj + '.info' + fibsuf + '.csv', w_or_a)
+   bervfile = open(outdir + obj + '.brv' + fibsuf + '.dat', w_or_a)
    prefile = outdir + obj + '.pre' + fibsuf + '.dat'
    rvofile = outdir + obj + '.rvo' + fibsuf + '.dat'
    e_rvofile = outdir + obj + '.e_rvo' + fibsuf + '.dat'
@@ -1270,7 +1278,7 @@ def serval():
       if not safemode: pause()   # ???
 
    snrmedian = np.median([sp.sn55 for sp in spoklist])
-   with open(outdir+obj+'.drs.dat', 'w') as myunit:
+   with open(outdir+obj+'.drs.dat', w_or_a) as myunit:
       for sp in spoklist:
           print(sp.bjd, sp.ccf.rvc*1000., sp.ccf.err_rvc*1000., sp.ccf.fwhm, sp.ccf.bis, sp.ccf.contrast, sp.timeid, file=myunit)  #, sp.hdr['HIERARCH ESO OBS PROG ID'], sp.hdr['HIERARCH ESO OBS PI-COI NAME']
 
@@ -1282,7 +1290,7 @@ def serval():
       spi = 0
 
    if last:
-      tpl =  outdir + obj + '.tpl%s.fits' % fibsuf
+      tpl =  outdir + obj + '%s.fits' % fibsuf
    elif tpl is None:
       tpl = spi   # choose highest S/N spectrum
 
@@ -1355,18 +1363,6 @@ def serval():
                is_ech_tpl = False
                TPL = [Tpl(wk, fk, spline_cv, spline_ev, vsini=tplvsini)] * nord
                TPLrv = 0.
-            elif tpl.endswith('.tpl%s.fits'%fibsuf) or os.path.isdir(tpl):
-               # last option
-               # read a spectrum stored order wise
-               print("tplvsini", tplvsini)
-               ww, ff, qq, head = read_template(tpl+(os.sep+os.path.basename(tpl.rstrip(os.sep))+'.tpl.fits' if os.path.isdir(tpl) else ''))
-               bb =  [None]*len(ff) if qq is None else qq<0.4
-               TPL = [Tpl(wo, fo, spline_cv, spline_ev, bk=bo, vsini=tplvsini, vrange=[v_lo, v_hi]) for wo,fo,bo in zip(ww,ff, bb)]
-               if 'HIERARCH SERVAL COADD NUM' in head:
-                  print('HIERARCH SERVAL COADD NUM:', head['HIERARCH SERVAL COADD NUM'])
-                  if omin<head['HIERARCH SERVAL COADD COMIN']: pause('omin to small')
-                  if omax>head['HIERARCH SERVAL COADD COMAX']: pause('omax to large')
-               TPLrv = head['HIERARCH SERVAL TARG RV']
             elif tpl.endswith('.s1d.fits'):
                # a user specified 1d template with another instrument
 
@@ -1407,6 +1403,18 @@ def serval():
 
                # template rv
                TPLrv = hdu[1].header['HIERARCH SERVAL TARG RV']
+            elif tpl.endswith('%s.fits'%fibsuf) or os.path.isdir(tpl):
+               # last option
+               # read a spectrum stored order wise
+               print("tplvsini", tplvsini)
+               ww, ff, qq, head = read_template(tpl+(os.sep+os.path.basename(tpl.rstrip(os.sep))+'.fits' if os.path.isdir(tpl) else ''))
+               bb =  [None]*len(ff) if qq is None else qq<0.4
+               TPL = [Tpl(wo, fo, spline_cv, spline_ev, bk=bo, vsini=tplvsini, vrange=[v_lo, v_hi]) for wo,fo,bo in zip(ww,ff, bb)]
+               if 'HIERARCH SERVAL COADD NUM' in head:
+                  print('HIERARCH SERVAL COADD NUM:', head['HIERARCH SERVAL COADD NUM'])
+                  if omin<head['HIERARCH SERVAL COADD COMIN']: pause('omin to small')
+                  if omax>head['HIERARCH SERVAL COADD COMAX']: pause('omax to large')
+               TPLrv = head['HIERARCH SERVAL TARG RV']
 
             else:
                # a user specified other observation/star
@@ -1808,7 +1816,6 @@ def serval():
                #yfit = ww[o]* 0 # np.nan
                #ind2 &= (ww[o]> smod.xmin) & (ww[o]< smod.xmax)
                #yfit[ind2] = smod(ww[o][ind2])
-               ww[o], yfit = smod.osamp(1.000000001*(4*osize+1)/smod.K)  # store with (+1) for compatibility
                wko = smod.xk     # the knot positions
                fko = smod()      # the knot values
                eko = smod.e_yk   # the error estimates for knot values
@@ -1890,7 +1897,8 @@ def serval():
 
                # set up data for fitting
                ### cut 200 km/s at the edges, buffer for rotbroadening
-               okmap = np.where((bmod==0) & (wmod > TPL0[o].wk[0]+200/c) & (wmod < TPL0[o].wk[-1]-200/c))
+               okmap = np.where((bmod==0) & (TPL0[o].msk(wmod)==0) & (wmod > TPL0[o].wk[0]+200/c) & (wmod < TPL0[o].wk[-1]-200/c))
+
                ### sort by wavelength (for spl_evf in calcspec)
                sind = np.argsort(wmod[okmap])
 
@@ -1930,11 +1938,8 @@ def serval():
             edges = np.hstack((edges[0]+2*(wko[0]-edges[0]), edges, edges[-1]+2*(wko[-1]-edges[-1])))
             nko,_ = np.histogram(wmod[ind], bins=edges, weights=(bmod[ind]==0)*1.)
             Nko,_ = np.histogram(wmod[ind], bins=edges, weights=bmod[ind]*0+1.)   # number of pixel per knot
-            rmin = tplqmin   # default: 0.4; minimum ratio (fraction) of good knot points
             qko = nko / Nko
-            qqo = interp(wko, qko)(ww[o])
-            bko = flag.badT * (qko < rmin)
-            bbo = flag.badT * (qqo < rmin)
+            bko = flag.badT * (qko < tplqmin)
 
             if 0:
                 gplot(nko, ',', Nko, ',', qko*Nko.max(), 'w l')
@@ -1976,7 +1981,10 @@ def serval():
                #gplot2.bar(0)(wmod.ravel(), mod.ravel(), emod.ravel(), linecolor.ravel(), ' us 1:2:3:4  w e pt 7 ps 0.5 lc var t "data"')
                gplot-(wmod[ind], mod[ind], emod[ind], ' w e pt 7 ps 0.5 t "data"')
                gplot<(TPL[o].wk, TPL[o].fk, 'us 1:2 w lp lt 2 ps 0.5 t "prev template"')
-               gplot<(ww[o], yfit, np.where(bbo, 5, 3),' us 1:2:3 w l lc var t "new template"')
+               www, fff = smod.osamp(4)
+               qqq = interp(wko, qko)(www)
+               bbb = flag.badT * (qqq < tplqmin)
+               gplot<(www, fff, np.where(bbb, 5, 3),' us 1:2:3 w l lc var t "new template"')
                if (~ind).any():
                   gplot<(wmod[~ind], mod[~ind], emod[~ind].clip(0,mod[ind].max()/20),'us 1:2:3 w e lt 4 pt 7 ps 0.5 t "flagged"')
                if (ind<ind0).any():
@@ -2004,9 +2012,7 @@ def serval():
                # pause()
 
             if not vsiniauto:
-                ff[o] = yfit
-                qq[o] = qqo    # ratio of good pixels in oversampled template
-                TPL[o] = Tpl(ww[o], ff[o], spline_cv, spline_ev, bk=bbo)
+                TPL[o] = Tpl(wko, fko, spline_cv, spline_ev, bk=bko)
                 wk[o] = wko
                 fk[o] = fko
                 ek[o] = eko
@@ -2015,9 +2021,15 @@ def serval():
 
          if vsiniauto:
             # apply fitted rotational broadening
+            ok = np.logical_and.reduce(np.isfinite(VSINI.T))
+            med_vsini, p25, p75 = np.percentile(VSINI[ok,0], [50, 25, 75])
+            # error estimate: sqrt(2)*inverf(2*0.75-1) = 0.674490 => CDF(0.674490*sigma) = 0.75
+            sd_vsini = (p75-p25) / 2 / 0.674490    # estimate standard deviation from IQR
+            e_med_vsini = 1.2533 * sd_vsini / np.sqrt(ok.sum())   # error of median [p213, Kendall 1948, Advanced Theory Of Statistics Vol 1, https://archive.org/details/in.ernet.dli.2015.57860/page/n223/mode/2up]
+            print(f"\n   med(vsini) = {med_vsini:.5f} +/- {e_med_vsini:.5f} km/s")
             for o in orders:
                # update template with median vsini
-               TPL[o].rotbroad(np.nanmedian(VSINI[:,0]))
+               TPL[o].rotbroad(med_vsini)
             # do not store broadened phoenix template (is_ech_tpl=false)
          else:
             if isinstance(ff, np.ndarray) and np.isnan(ff.sum()): stop('nan in template')
@@ -2035,13 +2047,9 @@ def serval():
             spt.header['HIERARCH SERVAL TARG RV'] = (targrv, '[km/s] RV used')
             spt.header['HIERARCH SERVAL TARG RV SRC'] = (targrv_src, 'Origin of TARG RV')
 
-            # Oversampled template
-            write_mfits(tpl, {'SPEC':ff, 'WAVE':ww, 'QMAP':qq}, ['SPEC', 'WAVE', 'QMAP'], spt.header, hdrref='', clobber=1)
             # Knot sampled template
             write_mfits(outdir+obj+'.fits', {'SPEC':fk, 'SIG':ek, 'WAVE':wk, 'NMAP': bk, 'QMAP': qk}, tfmt, spt.header, hdrref='', clobber=1)
-            os.system("ln -sf " + os.path.basename(tpl) + " " + outdir + "template.fits")
-            print('\ntemplate written to ', tpl)
-            if 0: os.system("ds9 -mode pan '"+tpl+"[1]' -zoom to 0.08 8 "+tpl+"  -single &")
+            print('\ntemplate written to ', outdir+obj+'.fits')
 
          # end of coadding
       print("time: %s\n" % minsec(time.time()-to))
@@ -2179,6 +2187,7 @@ def serval():
          if wfix: sp.w = spt.w
          fmod = sp.w * np.nan
          bpmap = 1 * sp.bpmap
+         bpmap2 = 1 * sp.bpmap
          for o in orders:
             w2 = sp.w[o]
             x2 = np.arange(w2.size)
@@ -2491,9 +2500,11 @@ def serval():
                gplot+(x2,w2, ((b2&flag.sky)!=flag.sky)*40-5, 'us (column(i)):3 w filledcurve x2 fs transparent solid 0.5 noborder lc 6 axis x1y2 t "sky"')
                pause('large RV ' if abs(rvo/1000-targrv+tplrv)>rvwarn else 'look ', o, ' rv = %.3f +/- %.3f m/s   rchi = %.2f' %(rvo, e_rv[n,o], rchi[n,o]))
 
+            # save updated bpmap
+            bpmap2[o] = b2
+
          # end loop over orders
 
-         # ind = setdiff1d(where(e_rv[n]>0.)[0],[71]) # do not use the failed and last order
          ind, = where(np.isfinite(e_rv[n])) # do not use the failed and last order
          rvm[n], rvmerr[n] = np.median(rv[n,ind]), std(rv[n,ind])
          if len(ind) > 1: rvmerr[n] /= (len(ind)-1)**0.5
@@ -2608,7 +2619,7 @@ def serval():
 
          if outfmt and not np.isnan(RV[n]):   # write residuals
             data = {'fmod': fmod, 'wave': sp.w, 'spec': sp.f,
-                    'err': sp.e, 'bpmap': bpmap, 'waverest': redshift(sp.w, vo=sp.berv, ve=RV[n]/1000.)}
+                    'err': sp.e, 'bpmap': bpmap2, 'waverest': redshift(sp.w, vo=sp.berv, ve=RV[n]/1000.)}
             outfile = os.path.basename(sp.filename)
             outfile = os.path.splitext(outfile)[0] + outsuf
             if 'res' in outfmt: data['res'] = sp.f - fmod
@@ -2667,29 +2678,29 @@ def serval():
       mlcfile = outdir+obj+'.mlc'+fibsuf+'.dat' # maximum likehood estimated RVCs and CRX
       srvfile = outdir+obj+'.srv'+fibsuf+'.dat' # serval top-level file
       vsinifile = outdir+obj+'.vsini'+fibsuf+'.dat'
-      rvunit = [open(rvfile, 'w'), open(outdir+obj+'.badrv'+fibsuf+'.dat', 'w')]
-      rvounit = [open(rvofile, 'w'), open(rvofile+'bad', 'w')]
-      rvcunit = [open(rvcfile, 'w'), open(rvcfile+'bad', 'w')]
-      crxunit = [open(crxfile, 'w'), open(crxfile+'bad', 'w')]
-      mlcunit = [open(mlcfile, 'w'), open(mlcfile+'bad', 'w')]
-      srvunit = [open(srvfile, 'w'), open(srvfile+'bad', 'w')]
-      mypfile = [open(e_rvofile, 'w'), open(e_rvofile+'bad', 'w')]
-      snrunit = [open(snrfile, 'w'), open(snrfile+'bad', 'w')]
-      chiunit = [open(chifile, 'w'), open(chifile+'bad', 'w')]
-      dlwunit = [open(dlwfile, 'w'), open(dlwfile+'bad', 'w')]
-      e_dlwunit = [open(e_dlwfile, 'w'), open(e_dlwfile+'bad', 'w')]
+      rvunit = [open(rvfile, w_or_a), open(outdir+obj+'.badrv'+fibsuf+'.dat', w_or_a)]
+      rvounit = [open(rvofile, w_or_a), open(rvofile+'bad', w_or_a)]
+      rvcunit = [open(rvcfile, w_or_a), open(rvcfile+'bad', w_or_a)]
+      crxunit = [open(crxfile, w_or_a), open(crxfile+'bad', w_or_a)]
+      mlcunit = [open(mlcfile, w_or_a), open(mlcfile+'bad', w_or_a)]
+      srvunit = [open(srvfile, w_or_a), open(srvfile+'bad', w_or_a)]
+      mypfile = [open(e_rvofile, w_or_a), open(e_rvofile+'bad', w_or_a)]
+      snrunit = [open(snrfile, w_or_a), open(snrfile+'bad', w_or_a)]
+      chiunit = [open(chifile, w_or_a), open(chifile+'bad', w_or_a)]
+      dlwunit = [open(dlwfile, w_or_a), open(dlwfile+'bad', w_or_a)]
+      e_dlwunit = [open(e_dlwfile, w_or_a), open(e_dlwfile+'bad', w_or_a)]
       halunit = irtunit = nadunit = []
       if meas_index:
-         halunit = [open(halfile, 'w'), open(halfile+'bad', 'w')]
+         halunit = [open(halfile, w_or_a), open(halfile+'bad', w_or_a)]
       if meas_CaIRT:
-         irtunit = [open(irtfile, 'w'), open(irtfile+'bad', 'w')]
+         irtunit = [open(irtfile, w_or_a), open(irtfile+'bad', w_or_a)]
       if meas_NaD:
-         nadunit = [open(nadfile, 'w'), open(nadfile+'bad', 'w')]
+         nadunit = [open(nadfile, w_or_a), open(nadfile+'bad', w_or_a)]
 
       if vsiniauto:
-         with open(vsinifile, 'w') as vsiniunit:
+         with open(vsinifile, w_or_a) as vsiniunit:
             print('#Median vsini [km/s]:', file=vsiniunit)
-            print(np.nanmedian(VSINI[:,0]),np.sqrt(2/np.pi)*np.nanstd(VSINI[:,0]), file=vsiniunit)
+            print(med_vsini, e_med_vsini, file=vsiniunit)
             print('\n#order', 'vsini[km/s]','error[km/s]', file=vsiniunit)
             for o in range(nord):
                print(o, VSINI[o,0], VSINI[o,1], file=vsiniunit)
@@ -2780,6 +2791,7 @@ if __name__ == "__main__":
    argopt('-targpm', help='[mas/yr mas/yr] Target proper motion.', nargs=2, type=float, default=[0.0, 0.0], metavar=('PMRA', 'PMDE'))
    argopt('-targplx', help='[mas] Target parallax.', type=float, default='nan', metavar='PLX')
    argopt('-targrv', help='[km/s] Target RV guess (for index measures) [float, "drsspt", "drsmed", "targ", None, "auto"]. None => no measure; targ => from simbad, hdr; auto => first from headers, second from simbad)).', default={'CARM_NIR': None, 'else': 'auto'}, metavar='RV')
+   argopt('-append', help='Append serval results. (WARNING: Secular acceleration resets. Use with option tpl or last. Do not mix result of different templates.)', action='store_true')
    argopt('-atmmask', help='Telluric line mask ('' for no masking)'+default, default='auto', dest='atmfile')
    argopt('-atmwgt', help='Downweighting factor for coadding in telluric regions'+default, type=float, default=None)
    argopt('-atmspec', help='Telluric spectrum  (in fits format, e.g. lib/stdatmos_vis30a090rh0780p000t.fits) to correct spectra by simple division'+default, type=str, default=None)
@@ -2802,7 +2814,7 @@ if __name__ == "__main__":
    argopt('-nset', '-iset', help='slice for file subset (e.g. 1:10, ::5)', default=':', type=arg2slice)
    argopt('-n_excl',  help='pattern for files to exclude', nargs='+', default=[])
    argopt('-kapsig', help='kappa sigma clip value'+default, type=float, default=3.0)
-   argopt('-last', help='use last template (-tpl <obj>/template.fits)', action='store_true')
+   argopt('-last', help='use last template (-tpl <obj>/<obj>.fits)', action='store_true')
    argopt('-look', help='slice of orders to view the fit [:]', nargs='?', default=[], const=':', type=arg2slice)
    argopt('-looki', help='list of indices to watch', nargs='*', choices=sorted(lines.keys()), default=[]) #, const=['Halpha'])
    argopt('-lookt', help='slice of orders to view the coadd fit [:]', nargs='?', default=[], const=':', type=arg2slice)
@@ -2820,7 +2832,7 @@ if __name__ == "__main__":
    argopt('-ofac', help='oversampling factor in coadding'+default, default=ofac, type=float)
    argopt('-ofacauto', help='automatic knot spacing with BIC.', action='store_true')
    argopt('-outchi', help='output of the chi2 map', nargs='?', const='_chi2map.fits')
-   argopt('-outfmt', help='output format of the fits file (default: None; const: fmod err res wave)', nargs='*', choices=['wave', 'waverest', 'err', 'fmod', 'res', 'spec', 'bpmap', 'ratio'], default=None)
+   argopt('-outfmt', help='output format of the fits file (default: None; const: fmod err res wave)', nargs='*', choices=['wave', 'waverest', 'err', 'fmod', 'res', 'spec', 'bpmap', 'mpmap', 'ratio'], default=None)
    argopt('-outsuf', help='output suffix', default='_mod.fits')
    argopt('-pmin', help='Minimum pixel'+default, default=pmin, type=int)
    argopt('-pmax', help='Maximum pixel'+default, default=pmax, type=int)

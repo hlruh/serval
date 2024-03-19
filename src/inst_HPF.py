@@ -70,7 +70,6 @@ def scan(self, s, orders=None, pfits=True, verb=True):
    #self.charged = hdr['CHARGED']
    #if not self.charged:
    #    self.flag |= sflag.user
-   
    if 'Goldilocks' in self.filename:
       self.drift = hdr.get(HIERARCH+'LRVCORR', np.nan)
       # no error given (https://github.com/grzeimann/Goldilocks_Documentation)

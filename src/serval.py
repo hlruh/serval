@@ -171,10 +171,12 @@ class Tpl:
           ii = np.isfinite(fk)
       if bk is None:
           bk = flag.nan * ~np.isfinite(fk)   # bad tpl regions
+
       self.wk = self.wk0 = wk[ii]
       self.fk = self.fk0 = fk[ii]   # broadened and unbroadened flux
       self.bk = self.bk0 = bk[ii]
 
+      
       self.vsini = vsini
       self.R = R
 
@@ -220,7 +222,10 @@ class Tpl:
               gplot(np.exp(wk), bk, ',', np.exp(wk), BK)
               pause()
 
-      self.msk = interp(wk, 1.*(BK>0))
+          self.msk = interp(wk, 1.*(BK>0))
+      else:
+          self.msk = interp(wk, 1.*(self.bk>0))
+
 
    def __call__(self, w, der=0):
       return self.evalfunc(w, self.funcarg, der=der)
@@ -1132,7 +1137,9 @@ def serval():
       if skyfile != 'auto':
          sky = np.genfromtxt(skyfile)
          skymsk = interp(lam2wave(sky[:,0]), sky[:,1])
-
+         # import pdb
+         # pdb.set_trace()  # Insert breakpoint
+    
    msksky = [0] * iomax
    if 1 and inst.name=='CARM_VIS':
       import astropy.io.fits as pyfits
@@ -1923,7 +1930,7 @@ def serval():
             edges = np.hstack((edges[0]+2*(wko[0]-edges[0]), edges, edges[-1]+2*(wko[-1]-edges[-1])))
             nko,_ = np.histogram(wmod[ind], bins=edges, weights=(bmod[ind]==0)*1.)
             Nko,_ = np.histogram(wmod[ind], bins=edges, weights=bmod[ind]*0+1.)   # number of pixel per knot
-            rmin = 0.4   # minimum ratio (fraction) of good knot points
+            rmin = tplqmin   # default: 0.4; minimum ratio (fraction) of good knot points
             qko = nko / Nko
             qqo = interp(wko, qko)(ww[o])
             bko = flag.badT * (qko < rmin)
@@ -2190,6 +2197,7 @@ def serval():
             b2[pmax:] |= flag.out
             b2[tellmask(w2)>0.01] |= flag.atm
             b2[skymsk(w2)>0.01] |= flag.sky
+
             b2[TPL[o].mskbad(barshift(w2, sp.berv+(tplrv-targrv)))] |= flag.badT
 
             #if inst.name == 'HARPS':
@@ -2624,7 +2632,7 @@ def serval():
             
             # -> changed compared to master branch: take the spectrum header with info on the spectrum
             sph = Spectrum(sp.filename, inst=inst, pfits=True, drs=drs, fib=fib, targ=targ).header
-            sph.insert('COMMENT', ('CDELT1', v_step))
+            #sph.insert('COMMENT', ('CDELT1', v_step))
             sph['CTYPE1'] = 'linear'
             sph['CUNIT1'] = 'km/s'
             sph['CRVAL1'] = v_lo
@@ -2832,6 +2840,7 @@ if __name__ == "__main__":
    argopt('-tplrv', help='[km/s] template RV. By default taken from the template header and set to 0 km/s for phoe tpl. [float, "tpl", "drsspt", "drsmed", "targ", None, "auto"]', default='auto')
    argopt('-tplvsini', help='[km/s] Rotational velocity to broaden template.', type=float)
    argopt('-tplR', help='Broaden template to instrumental resolution with R = (R_inst^-2 - R_tpl^-2)^-0.5. R_inst can be specified in the inst file (default: None; const: [R_inst=%s, R_tpl=inf]).'%R_inst, nargs='*' if R_inst else '+', type=float, metavar=('R_inst', 'R_tpl'))
+   argopt('-tplqmin', help='minimum quality factor (ratio of good pixels to all pixels) for template knots to be used'+default, default=0.4, type=float)
    argopt('-tset',  help="slice for file subset in template creation", default=':', type=arg2slice)
    argopt('-verb', help='verbose', action='store_true')
    v_lo, v_hi, v_step = -5.5, 5.6, 0.1

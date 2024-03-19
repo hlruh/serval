@@ -1336,7 +1336,8 @@ def serval():
    osize = len(pixxx)
    ww = [0] * nord
    ff = [0] * nord
-
+   print('\n\nHERE\\n')
+   print(ww)
 
    if inst.name == 'FEROS':
       ntopix = ptomax - ptomin

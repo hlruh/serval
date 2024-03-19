@@ -1336,8 +1336,7 @@ def serval():
    osize = len(pixxx)
    ww = [0] * nord
    ff = [0] * nord
-   print('\n\nHERE\\n')
-   print(ww)
+
 
    if inst.name == 'FEROS':
       ntopix = ptomax - ptomin
@@ -2008,6 +2007,7 @@ def serval():
             if ofacauto:
                # replace template.fits with optimal knot spacing (smoothing) for RVs
                yfit = ww[o] * 0 # np.nan
+               print(ww)
                ind2 = (ww[o]> smod.xmin) & (ww[o]< smod.xmax)
                yfit[ind2] = smod(ww[o][ind2])
                # pause()

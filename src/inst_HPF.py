@@ -77,8 +77,8 @@ def scan(self, s, orders=None, pfits=True, verb=True):
    
    elif 1:
       # for HPF spectra the drift is already included in the wavelength solution
-      self.drift = np.nan
-      self.e_drift = np.nan
+      self.drift = 0
+      self.e_drift = 0
 
    if self.mjd > 59731:
        # add drift offset post downtime (estimate based on sample)

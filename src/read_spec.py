@@ -282,7 +282,7 @@ def write_mfits(filename, datas, extnames, header='', hdrref=None, clobber=False
        data = datas[extname]
        if not isinstance(data, np.ndarray):
            # pad arrays with zero to common size
-           maxpix = max(arr.size for arr in data if isinstance(arr, np.ndarray))
+           maxpix = max(len(arr) for arr in data if isinstance(arr, (list,np.ndarray)))
            data = np.zeros((len(data), maxpix))  # dtype=data.dtype)
            for o,arr in enumerate(datas[extname]):
                if isinstance(arr, np.ndarray): data[o,:len(arr)] = arr

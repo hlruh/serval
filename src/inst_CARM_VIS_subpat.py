@@ -8,11 +8,12 @@ obsloc = dict(lat=37.2236, lon= -2.5463, elevation=2168.)
 
 iomax = 61 # NAXIS2
 snmax = 500
-oset = '10:52'
+oset = '35:50'
+o_excl='38'
 
 maskfile = 'telluric_mask_carm_short.dat'
 
-pat = '*-vis_%(fib)s.fits *-vis_%(fib)s-*.fits'   # => vis_A.fits, vis_B.fits
+pat = '*-vis_%(fib)s_subpat.fits'   # => vis_A.fits, vis_B.fits
 
 
 def scan(self, s, pfits=True):
@@ -56,7 +57,7 @@ def scan(self, s, pfits=True):
       self.drift = hdr.get(HIERARCH+'CARACAL SERVAL FP RV', hdr.get(HIERARCH+'CARACAL DRIFT FP RV', np.nan))
       self.e_drift = hdr.get(HIERARCH+'CARACAL SERVAL FP E_RV', hdr.get(HIERARCH+'CARACAL DRIFT FP E_RV', np.nan))
       self.fox = HIERARCH+'CARACAL FOX XWD' in hdr
-      self.sn55 = hdr.get(HIERARCH+'CARACAL '+('FOX' if self.fox else 'LXT')+' SNR 36', np.nan)   # @ 746nm
+      self.sn55 = hdr.get(HIERARCH+'CARACAL '+('FOX' if self.fox else 'LXT')+' SNR 48', np.nan)   
       sn25 = hdr.get(HIERARCH+'CARACAL FOX SNR 25', np.nan)
       sn30 = hdr.get(HIERARCH+'CARACAL FOX SNR 30', np.nan)
       if sn25 > 70 and sn25 > 10*sn30: # hig
@@ -87,9 +88,9 @@ def scan(self, s, pfits=True):
 def data(self, orders, pfits=True):
    hdulist = self.hdulist
    if 1:  # read order data
-      f = hdulist['SPEC'].section[orders]
-      w = hdulist['WAVE'].section[orders]
-      e = hdulist['SIG'].section[orders]
+      f = hdulist['SPEC CORR'].section[orders]
+      w = np.exp(hdulist['WAVE'].section[orders])
+      e = hdulist['ERR'].section[orders]
       bpmap = np.isnan(f).astype(np.uint64)            # flag 1 for nan
 
       bpmap0 = np.zeros((61,4096), dtype=np.uint64)
@@ -97,6 +98,15 @@ def data(self, orders, pfits=True):
       bpmap0[14:38,1643] |= 1   # ghost of hotspot tail
       bpmap0[14:38,2459] |= 1   # spikes of hotspot satellite (bug not correct due to bug in v2.00)
       bpmap0[15:41,3374] |= 1   # displaced column; ignore by marking as nan
+      # stac
+      bpmap0[37,3370:] |= flag.atm # car-20160701T00h49m36s-sci-gtoc-vis.fits
+      bpmap0[43,2120:2390] |= flag.atm # car-20160701T00h49m36s-sci-gtoc-vis.fits
+      bpmap0[43,2600:2770] |= flag.atm # car-20160701T00h49m36s-sci-gtoc-vis.fits
+      bpmap0[44,910:970] |= flag.atm # car-20160701T00h49m36s-sci-gtoc-vis.fits
+      bpmap0[44,2600:2670] |= flag.atm # car-20160701T00h49m36s-sci-gtoc-vis.fits
+      
+      #
+      '''
       bpmap0[28,3395:3400] |= flag.sky # car-20160701T00h49m36s-sci-gtoc-vis.fits
       bpmap0[34,838:850] |= flag.sky # car-20160803T22h46m41s-sci-gtoc-vis.fits
       bpmap0[34,2035:2044] |= flag.sky # car-20160714T00h18m29s-sci-gtoc-vis
@@ -151,6 +161,7 @@ def data(self, orders, pfits=True):
       bpmap0[49,2532:2544] |= flag.sky # car-20160701T00h49m36s-sci-gtoc-vis.fits
       bpmap0[49,3046:3056] |= flag.sky # car-20160701T00h49m36s-sci-gtoc-vis.fits
       bpmap0[49,3574:3588] |= flag.sky # car-20160701T00h49m36s-sci-gtoc-vis.fits
+      '''
       # interpolate bad columns, they mess up a lot the creation of the template
       # We do this only when we read all order (preRVs), but not for coadding (single orders)
       if orders == np.s_[:]:
@@ -165,12 +176,6 @@ def data(self, orders, pfits=True):
 
       with np.errstate(invalid='ignore'):
         # arrgh, in newer numpy version comparison with nan raises a warning
-        if self.fox:
-           e = e * 10.
-           f = f * 10.
-        else:
-           e = np.sqrt(5.*10 + np.abs(f))
-           bpmap[f>300000] |= flag.sat
         bpmap[f < -3*e] |= flag.neg
         bpmap[e==0] |= flag.nan
 

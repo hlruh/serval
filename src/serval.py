@@ -1149,7 +1149,7 @@ def serval():
          # pdb.set_trace()  # Insert breakpoint
     
    msksky = [0] * iomax
-   if 1 and inst.name=='CARM_VIS':
+   if 0 and inst.name=='CARM_VIS':
       import astropy.io.fits as pyfits
       msksky = flag.sky * pyfits.getdata(servallib + 'carm_vis_tel_sky.fits')
 
@@ -1177,7 +1177,6 @@ def serval():
          #if mask[i0-1,0]==0:
          mask = np.insert(mask,i0+2,[ran[1],1.0],axis=0) # insert
          mask = np.insert(mask,i0+3,[ran[1]+0.0000001,0.0],axis=0) # insert
-
 
    ################################
    ### READ FITS FILES ############
@@ -1664,6 +1663,10 @@ def serval():
                bmod[n] = sp.bpmap | msksky[o]
                bmod[n][tellmask(sp.w)>0.01] |= flag.atm
                bmod[n][skymsk(sp.w)>0.01] |= flag.sky
+
+               bmod[n][:pmin] |= flag.out
+               bmod[n][pmax:] |= flag.out
+              
                # see https://github.com/mzechmeister/serval/issues/19#issuecomment-452661455
                # note in this step the RVs have reverted signs.
                bmod[n][tellmask(dopshift(redshift(sp.w, vo=sp.berv, ve=RV[n]/1000.), spt.berv))>0.01] |= flag.badT
@@ -1675,8 +1678,8 @@ def serval():
                   i0 = 0
                ie = np.searchsorted(w2, TPL[o].wk[-1])
                pind, = where(bmod[n][i0:ie] == 0)
-               bmod[n][:i0] |= flag.out
-               bmod[n][ie:] |= flag.out
+               #bmod[n][:i0] |= flag.out
+               #bmod[n][ie:] |= flag.out
                if np.sum(sp.f[pind]<0) > 0.4*pind.size:
                   print('too many negative data points in n=%s, o=%s, RV=%s; skipping order' % (n, o, RV[n]))
                   wmod[n] = np.nan
@@ -1812,10 +1815,7 @@ def serval():
                else:
                     smod, ymod = spl.ucbspl_fit(wmod[ind], mod[ind], we[ind], K=nk, lam=pspllam, mu=mu, e_mu=e_mu, e_yk=True, retfit=True)
                 
-                    
-               #yfit = ww[o]* 0 # np.nan
-               #ind2 &= (ww[o]> smod.xmin) & (ww[o]< smod.xmax)
-               #yfit[ind2] = smod(ww[o][ind2])
+
                wko = smod.xk     # the knot positions
                fko = smod()      # the knot values
                eko = smod.e_yk   # the error estimates for knot values
@@ -1885,6 +1885,11 @@ def serval():
                smod, ymod = spl.ucbspl_fit(wmod[ind], mod[ind], we[ind], K=Ko, lam=pspllam, mu=mu, e_mu=e_mu, e_yk=True, retfit=True)
                print("K=%d " % Ko, end='')
 
+               wko = smod.xk     # the knot positions
+               fko = smod()      # the knot values
+               eko = smod.e_yk   # the error estimates for knot values
+               dko = smod.dk()   # ~second derivative at knots
+               
                if 0:
                   gplot2(K, BIC, 'w lp,', Ko, min(BIC), 'lc 3 pt 7')
                   gplot(wmod[ind], mod[ind], 'w d,', smod.osamp(10), 'w lp ps 0.3,', smod.xk, smod(), 'w p')
@@ -1936,8 +1941,9 @@ def serval():
             # estimate the number of valid points for each knot
             edges = 0.5 * (wko[1:]+wko[:-1])
             edges = np.hstack((edges[0]+2*(wko[0]-edges[0]), edges, edges[-1]+2*(wko[-1]-edges[-1])))
-            nko,_ = np.histogram(wmod[ind], bins=edges, weights=(bmod[ind]==0)*1.)
-            Nko,_ = np.histogram(wmod[ind], bins=edges, weights=bmod[ind]*0+1.)   # number of pixel per knot
+            nko,_ = np.histogram(wmod, bins=edges, weights=(bmod==0)*1.)
+            Nko,_ = np.histogram(wmod, bins=edges, weights=bmod*0+1.)   # number of pixel per knot
+
             qko = nko / Nko
             bko = flag.badT * (qko < tplqmin)
 
@@ -2003,23 +2009,13 @@ def serval():
                   pause('lookt ',o)
 
             # apply the fit
-            #ff[o][ind2] = yfit
-            if ofacauto:
-               # replace template.fits with optimal knot spacing (smoothing) for RVs
-               yfit = ww[o] * 0 # np.nan
-               print(ww)
-               ind2 = (ww[o]> smod.xmin) & (ww[o]< smod.xmax)
-               yfit[ind2] = smod(ww[o][ind2])
-               # pause()
-
             if not vsiniauto:
                 TPL[o] = Tpl(wko, fko, spline_cv, spline_ev, bk=bko)
-                wk[o] = wko
+                wk[o] = np.array(wko)
                 fk[o] = fko
                 ek[o] = eko
                 bk[o] = nko
-                qk[o] = qko
-
+        
          if vsiniauto:
             # apply fitted rotational broadening
             ok = np.logical_and.reduce(np.isfinite(VSINI.T))
@@ -2209,7 +2205,7 @@ def serval():
             b2[skymsk(w2)>0.01] |= flag.sky
 
             b2[TPL[o].mskbad(barshift(w2, sp.berv+(tplrv-targrv)))] |= flag.badT
-
+            
             #if inst.name == 'HARPS':
                #b2[lstarmask(barshift(w2,sp.berv))>0.01] |= flag.lowQ
                #pause()
@@ -2833,7 +2829,7 @@ if __name__ == "__main__":
    argopt('-ofac', help='oversampling factor in coadding'+default, default=ofac, type=float)
    argopt('-ofacauto', help='automatic knot spacing with BIC.', action='store_true')
    argopt('-outchi', help='output of the chi2 map', nargs='?', const='_chi2map.fits')
-   argopt('-outfmt', help='output format of the fits file (default: None; const: fmod err res wave)', nargs='*', choices=['wave', 'waverest', 'err', 'fmod', 'res', 'spec', 'bpmap', 'mpmap', 'ratio'], default=None)
+   argopt('-outfmt', help='output format of the fits file (default: None; const: wave waverest err fmod res spec bpmap ratio)', nargs='*', choices=['wave', 'waverest', 'err', 'fmod', 'res', 'spec', 'bpmap', 'mpmap', 'ratio'], default=None)
    argopt('-outsuf', help='output suffix', default='_mod.fits')
    argopt('-pmin', help='Minimum pixel'+default, default=pmin, type=int)
    argopt('-pmax', help='Maximum pixel'+default, default=pmax, type=int)
@@ -2914,7 +2910,7 @@ if __name__ == "__main__":
       ckappa = ckappa * 2 # list with two entries ;)
 
    if outfmt == []:
-      outfmt = ['fmod', 'err', 'res', 'wave']
+      outfmt = ['wave', 'waverest', 'err', 'fmod', 'res', 'spec', 'bpmap', 'ratio']
 
    if cprofile:
       sys.argv.remove('-cprofile')

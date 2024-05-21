@@ -1451,60 +1451,12 @@ def serval():
 
             # Smoothing with bspline
             # the number of knots is halved.
-            
-            ### TEST: knot offset ###
-            if 0:                
-                # before fitting spline vary the knot position and find the minimum
-                # optimize knot offset
 
-                v = barshift(spt.w[o,idx],spt.berv)
-                spc = spt.f[o,idx]
+            spt.bpmap[o][tellmask(spt.w[o])>0.01] |= flag.atm
+            spt.bpmap[o][skymsk(spt.w[o])>0.01] |= flag.sky
+            wo_bary = barshift(spt.w[o], spt.berv)
 
-                k = int(idx.size*ofac/2)
-
-                knot_spacing = (v.max()-v.min())/(k-1)
-                kk = np.linspace(0,knot_spacing,10)
-                
-                def func_spl_rv(knotoffset):
-                    #print(knotoffset)
-                    spl_t = spl.ucbspl_fit(v,spc,
-                                           xmin=v.min()+knotoffset,
-                                           xmax=v.max()+knotoffset,                                         
-                                           K=k, e_yk=True, lam=0.00001)
-                    # fit
-                    popt, pcov = curve_fit(lambda v,rv: spl_t(v+rv),v[100:-100],spc[100:-100],
-                                           p0=[-knot_spacing/2],bounds=(-knot_spacing,knot_spacing))
-                    
-                    return popt[0]
-                
-                knotoffset = optimize.differential_evolution(lambda x: func_spl_rv(x)**2, bounds=[(0, knot_spacing)]).x[0]
-                smod = spl.ucbspl_fit(v,spt.f[o,idx],
-                                       xmin=v.min()+knotoffset,
-                                       xmax=v.max()+knotoffset,                                         
-                                       K=k, e_yk=True, lam=0.00001)
-                print('knot_phase',knotoffset/knot_spacing)
-                
-            ### TEST: knot offset ###
-            if 0:
-                # use a fixed knot offset to see if something changes at all
-                
-                v = barshift(spt.w[o,idx],spt.berv)
-                k = int(idx.size*ofac/2)
-
-                knot_spacing = (np.nanmax(v)-np.nanmin(v))/(k-1)
-                
-                print('\n\n\nHERE spt\n\n\n')
-                print(v)
-                    
-                smod = spl.ucbspl_fit(barshift(spt.w[o,idx],spt.berv), spt.f[o,idx], 
-                                      xmin=np.nanmin(v)+knot_spacing*knotoffset,
-                                      xmax=np.nanmax(v)+knot_spacing*knotoffset,    
-                                      K=int(idx.size*ofac/2), e_yk=True, lam=0.00001)
-                     
-                
-            else:
-                smod = spl.ucbspl_fit(barshift(spt.w[o,idx],spt.berv), spt.f[o,idx], K=int(idx.size*ofac/2), e_yk=True, lam=0.00001)
-            
+            smod = spl.ucbspl_fit(wo_bary[idx], spt.f[o,idx], K=int(idx.size*ofac/2), e_yk=True, lam=0.00001)
 
             # Conversion to cardinal spline and then to fast spline
             smod_spl = smod.to_spl()
@@ -1512,9 +1464,13 @@ def serval():
             xk, kko = smod_spl.xk, smod_spl.a
             yk = smod_spl()
             kko = xk, yk, kko[1]/(xk[1:]-xk[:-1]), np.append(2*kko[2]/(xk[1:]-xk[:-1])**2, 0), kko[3]/(xk[1:]-xk[:-1])**3
-            bk = spt.bpmap[o,np.searchsorted(spt.w[o], xk, side='right')]
-            bk[tellmask(barshift(xk, -spt.berv))>0.01] |= flag.atm   # mask as before berv correction
-            bk[skymsk(barshift(xk, -spt.berv))>0.01] |= flag.sky   # mask as before berv correction
+
+            # propagate the bpmap to spline knots and barycentric frame, broaden mask by knot spacing
+            dv = (xk[1] - xk[0]) * c   # [km/s] template knot spacing
+            bpo_dv = flagbroad(spt.w[o], spt.bpmap[o], -dv, dv)
+            idx = np.searchsorted(wo_bary, xk, side='right')
+            bk = bpo_dv[idx]                        # next knot
+            bk |= bpo_dv.take(idx-1, mode='clip')   # previous knot
 
             TPL[o] = Tpl(xk, yk, spline_cv, spline_ev, mask=True, bk=bk, berv=spt.berv, vrange=[v_lo, v_hi])
             TPL[o].funcarg = kko # replace with original spline

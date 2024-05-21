@@ -1448,7 +1448,11 @@ def serval():
 
             # Smoothing with bspline
             # the number of knots is halved.
-            smod = spl.ucbspl_fit(barshift(spt.w[o,idx],spt.berv), spt.f[o,idx], K=int(idx.size*ofac/2), e_yk=True, lam=0.00001)
+            spt.bpmap[o][tellmask(spt.w[o])>0.01] |= flag.atm
+            spt.bpmap[o][skymsk(spt.w[o])>0.01] |= flag.sky
+            wo_bary = barshift(spt.w[o], spt.berv)
+
+            smod = spl.ucbspl_fit(wo_bary[idx], spt.f[o,idx], K=int(idx.size*ofac/2), e_yk=True, lam=0.00001)
 
             # Conversion to cardinal spline and then to fast spline
             smod_spl = smod.to_spl()
@@ -1456,9 +1460,13 @@ def serval():
             xk, kko = smod_spl.xk, smod_spl.a
             yk = smod_spl()
             kko = xk, yk, kko[1]/(xk[1:]-xk[:-1]), np.append(2*kko[2]/(xk[1:]-xk[:-1])**2, 0), kko[3]/(xk[1:]-xk[:-1])**3
-            bk = spt.bpmap[o,np.searchsorted(spt.w[o], xk, side='right')]
-            bk[tellmask(barshift(xk, -spt.berv))>0.01] |= flag.atm   # mask as before berv correction
-            bk[skymsk(barshift(xk, -spt.berv))>0.01] |= flag.sky   # mask as before berv correction
+
+            # propagate the bpmap to spline knots and barycentric frame, broaden mask by knot spacing
+            dv = (xk[1] - xk[0]) * c   # [km/s] template knot spacing
+            bpo_dv = flagbroad(spt.w[o], spt.bpmap[o], -dv, dv)
+            idx = np.searchsorted(wo_bary, xk, side='right')
+            bk = bpo_dv[idx]                        # next knot
+            bk |= bpo_dv.take(idx-1, mode='clip')   # previous knot
 
             TPL[o] = Tpl(xk, yk, spline_cv, spline_ev, mask=True, bk=bk, berv=spt.berv, vrange=[v_lo, v_hi])
             TPL[o].funcarg = kko # replace with original spline
@@ -1698,9 +1706,6 @@ def serval():
 
                smod, ymod = spl.ucbspl_fit(wmod[ind], mod[ind], we[ind], K=nk, lam=pspllam, mu=mu, e_mu=e_mu, e_yk=True, retfit=True)
 
-               #yfit = ww[o]* 0 # np.nan
-               #ind2 &= (ww[o]> smod.xmin) & (ww[o]< smod.xmax)
-               #yfit[ind2] = smod(ww[o][ind2])
                wko = smod.xk     # the knot positions
                fko = smod()      # the knot values
                eko = smod.e_yk   # the error estimates for knot values
@@ -1769,6 +1774,11 @@ def serval():
                Ko = K[np.argmin(BIC)]
                smod, ymod = spl.ucbspl_fit(wmod[ind], mod[ind], we[ind], K=Ko, lam=pspllam, mu=mu, e_mu=e_mu, e_yk=True, retfit=True)
                print("K=%d " % Ko, end='')
+
+               wko = smod.xk     # the knot positions
+               fko = smod()      # the knot values
+               eko = smod.e_yk   # the error estimates for knot values
+               dko = smod.dk()   # ~second derivative at knots
 
                if 0:
                   gplot2(K, BIC, 'w lp,', Ko, min(BIC), 'lc 3 pt 7')
@@ -1888,14 +1898,6 @@ def serval():
                   pause('lookt ',o)
 
             # apply the fit
-            #ff[o][ind2] = yfit
-            if ofacauto:
-               # replace template.fits with optimal knot spacing (smoothing) for RVs
-               yfit = ww[o] * 0 # np.nan
-               ind2 = (ww[o]> smod.xmin) & (ww[o]< smod.xmax)
-               yfit[ind2] = smod(ww[o][ind2])
-               # pause()
-
             if not vsiniauto:
                 TPL[o] = Tpl(wko, fko, spline_cv, spline_ev, bk=bko)
                 wk[o] = wko

@@ -3,7 +3,7 @@ calculate radial velocities from stellar spectra
 
 The concept of SERVAL is described in http://adsabs.harvard.edu/abs/2017A&A...609A..12Z [[pdf](https://www.aanda.org/articles/aa/pdf/2018/01/aa31483-17.pdf)].
 
-Currently, SERVAL can process data from CARM_VIS, CARM_NIR, ELODIE, ESPRESSO, HARPS, HARPN, and SOPHIE.
+Currently, SERVAL can process data from CARM_VIS, CARM_NIR, ELODIE, ESPRESSO, HARPS, HARPN, HPF, and SOPHIE.
 
 ## Install instruction
 
